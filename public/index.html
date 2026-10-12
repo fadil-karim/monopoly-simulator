@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monopoly AI Simulator</title>
+  <meta name="description" content="Browser-based Monopoly simulator (London and Mega editions) where every player is an AI model called through its own API. Full game logs for analytics.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/site.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <h1>Monopoly AI Simulator <small>London edition</small></h1>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="setup" role="tab">Setup</button>
+      <button class="tab" data-tab="play" role="tab">Play</button>
+      <button class="tab" data-tab="games" role="tab">Games</button>
+      <button class="tab" data-tab="analytics" role="tab">Analytics</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-setup" class="panel active">
+      <div class="grid-2">
+        <div class="card">
+          <h2>API keys</h2>
+          <p class="muted">Keys stay in this browser (localStorage) and are sent only to the provider you pick. Calls go straight from your browser to each API, so a provider that blocks browser requests (CORS) will show an error here and that player falls back to the rule-based bot. OpenRouter or a local proxy are the easy workarounds.</p>
+          <div id="keys"></div>
+        </div>
+        <div class="card">
+          <h2>Game settings</h2>
+          <div class="form" id="settings">
+            <label>Edition
+              <select name="edition">
+                <option value="standard">London (standard, 40 squares, £1,500)</option>
+                <option value="mega">London Mega edition (52 squares, speed die, £2,500)</option>
+              </select>
+            </label>
+            <div class="row mega-only">
+              <label class="check"><input type="checkbox" name="speedDie" checked> Speed die</label>
+              <label class="check"><input type="checkbox" name="speedDieFromStart" checked> Speed die from the first turn</label>
+            </div>
+            <div class="row">
+              <label>Starting cash <input type="number" name="startingCash" placeholder="edition default" min="100" step="50"></label>
+              <label>Round limit <input type="number" name="maxRounds" value="100" min="5" max="1000"></label>
+              <label>Games to run <input type="number" name="games" value="1" min="1" max="500"></label>
+              <label>Games in parallel <input type="number" name="concurrency" value="1" min="1" max="20"></label>
+              <label>Seed (optional) <input type="number" name="seed" placeholder="random"></label>
+            </div>
+            <div class="row">
+              <label class="check"><input type="checkbox" name="auctionOnDecline" checked> Auction declined properties</label>
+              <label class="check"><input type="checkbox" name="bankAuction" checked> Auction assets of players bankrupted by the bank</label>
+              <label class="check"><input type="checkbox" name="shuffleOrder" checked> Random seating order each game</label>
+              <label class="check"><input type="checkbox" name="freeParkingJackpot"> Free Parking jackpot (house rule)</label>
+            </div>
+            <h3>Speed</h3>
+            <div class="row">
+              <label>Ask the model before rolling
+                <select name="aiPreroll">
+                  <option value="useful" selected>Only when something is possible (fast)</option>
+                  <option value="always">Every turn (slow, more trading)</option>
+                  <option value="never">Never (rule-based building only)</option>
+                </select>
+              </label>
+              <label class="check"><input type="checkbox" name="aiRaiseCash"> Model chooses what to liquidate when short of cash</label>
+              <label>Trade proposals per turn <input type="number" name="maxTradesPerTurn" value="1" min="0" max="3"></label>
+            </div>
+            <div class="row">
+              <label>Max reply tokens <input type="number" name="maxTokens" value="1200" min="100" max="16000"></label>
+              <label>Call timeout (s) <input type="number" name="timeoutMs" value="90" min="5" max="600"></label>
+              <label>Parallel calls per provider <input type="number" name="apiConcurrency" value="8" min="1" max="64"></label>
+              <label class="check"><input type="checkbox" name="logPrompts" checked> Store full prompts and replies in the log</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Players</h2>
+          <button id="add-player" class="btn">Add player</button>
+        </div>
+        <div id="players" class="players"></div>
+      </div>
+
+      <div class="card">
+        <h2>Universal strategy instructions</h2>
+        <p class="muted">Given to every player, in addition to each player's own instructions.</p>
+        <textarea id="universal" rows="4" placeholder="e.g. Play to win on net worth. Prefer completing orange and red sets. Never pay more than 150% of list price in auctions."></textarea>
+      </div>
+
+      <div class="actions">
+        <button id="start" class="btn primary">Start simulation</button>
+        <button id="export-settings" class="btn">Export settings</button>
+        <label class="btn file">Import settings <input type="file" id="import-settings" accept="application/json" hidden></label>
+        <span id="setup-status" class="muted"></span>
+      </div>
+    </section>
+
+    <section id="tab-play" class="panel">
+      <div class="playbar">
+        <div id="progress" class="muted">No simulation running.</div>
+        <div class="playbar-right">
+          <label>Watch <select id="watch"></select></label>
+          <button id="stop" class="btn danger" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="play-grid">
+        <div class="board-wrap"><div id="board" class="board"></div></div>
+        <aside class="side">
+          <div id="player-cards" class="player-cards"></div>
+          <div class="feed-head"><h3>Events</h3><label class="check small"><input type="checkbox" id="feed-pause"> pause</label></div>
+          <div id="events" class="feed"></div>
+          <details open>
+            <summary>Model calls</summary>
+            <div id="llm-feed" class="feed llm"></div>
+          </details>
+        </aside>
+      </div>
+    </section>
+
+    <section id="tab-games" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h2>Saved games</h2>
+          <div>
+            <button id="export-all" class="btn">Export all (JSON)</button>
+            <button id="export-jsonl" class="btn">Export all (JSONL)</button>
+            <button id="export-csv" class="btn">Summary CSV</button>
+            <button id="clear-games" class="btn danger">Delete all</button>
+          </div>
+        </div>
+        <p class="muted">Every game is stored in this browser with its complete event log and every model call (prompt, reply, latency, tokens). Export to keep it elsewhere.</p>
+        <div id="games-table"></div>
+      </div>
+      <div id="game-detail" class="card hidden"></div>
+    </section>
+
+    <section id="tab-analytics" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h2>Analytics</h2>
+          <label>Batch <select id="batch-filter"><option value="">all games</option></select></label>
+        </div>
+        <div id="analytics"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="muted">All simulation runs in your browser. Nothing is uploaded anywhere except your own API calls to the providers you configure.</footer>
+
+  <script type="module" src="/assets/js/ui.js"></script>
+</body>
+</html>

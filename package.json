@@ -1,0 +1,16 @@
+{
+  "name": "monopoly-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser Monopoly simulator (London and Mega editions) where every player is an AI model called through its own API.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run",
+    "simulate": "node scripts/simulate.mjs 50 standard && node scripts/simulate.mjs 50 mega"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,17 @@
+make this a browser monopoly simulator
+
+London edition
+
+mega monopoly option
+
+i want it to simulate games of monopoly where the players are all AI models via api
+
+include all the major ai API
+
+A user should be able to create players, pick the model and effort etc, and give some basic strategic instruction custom to the player. there should also be able to provide universal strategic instructions.
+
+make it work as fast as possible
+
+make it save a full log of the game for analytics
+
+use all of the skills containing git for this repo - and the cloudflare one
