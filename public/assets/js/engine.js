@@ -25,14 +25,15 @@ export const DEFAULT_CONFIG = {
   edition: 'standard', // 'standard' | 'mega'
   startingCash: null, // null = edition default
   salary: 200,
-  maxRounds: 100,
-  speedDie: true, // mega only
+  maxRounds: null, // null = play until one player remains (hard safety stop at 1000 rounds)
+  speedDie: true, // mega edition always rolls the speed die
   speedDieFromStart: true,
   bankAuction: true, // auction properties returned to the bank on bankruptcy
   auctionOnDecline: true,
-  aiPreroll: 'useful', // 'always' | 'useful' | 'never'
-  aiRaiseCash: false, // let the model choose what to liquidate (slower)
-  maxTradesPerTurn: 1,
+  aiPreroll: 'always', // 'always' | 'useful' | 'never'
+  aiRaiseCash: true, // the model chooses what to liquidate
+  maxTradesPerTurn: 10, // sanity cap per turn; negotiation itself is open-ended
+  maxNegotiationRounds: 8, // counter-offers per trade before it lapses
   jailFine: 50,
   freeParkingJackpot: false,
   shuffleOrder: true, // randomise seating each game so turn order does not bias results
@@ -65,7 +66,7 @@ export class Game {
       bankrupt: false,
       bankruptRound: null,
       passedGo: false,
-      stats: { rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0 },
+      stats: { rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0 },
     }));
     if (this.config.shuffleOrder) this.shuffle(this.players);
     this.props = {};
@@ -77,6 +78,7 @@ export class Game {
     this.seq = 0;
     this.events = [];
     this.llmCalls = [];
+    this.chat = [];
     this.snapshots = [];
     this.stopped = false;
     this.freeParkingPot = 0;
@@ -202,7 +204,46 @@ export class Game {
       result = heuristicDecide(this, p, type, ctx);
       source = 'heuristic-fallback';
     }
+    await this.handleTalk(p, result, type !== 'reply');
     return { ...result, __source: source };
+  }
+
+  // ---------- table talk ----------
+  say(p, message, to = null) {
+    const text = String(message).trim().slice(0, 600);
+    if (!text) return null;
+    const rec = { seq: ++this.seq, round: this.round, turn: this.turn, from: p.id, to, message: text };
+    this.chat.push(rec);
+    p.stats.messages++;
+    this.log('chat', { player: p.id, to, message: text });
+    return rec;
+  }
+  addressedIn(p, text) {
+    const t = String(text).toLowerCase();
+    for (const o of this.alive()) {
+      if (o.id === p.id) continue;
+      if (t.includes(o.id.toLowerCase()) || (o.name && t.includes(o.name.toLowerCase()))) return o;
+    }
+    return null;
+  }
+  async handleTalk(p, r, allowReply) {
+    if (!r || typeof r !== 'object') return;
+    let target = null;
+    let heard = null;
+    if (typeof r.say === 'string' && r.say.trim()) {
+      const rec = this.say(p, r.say);
+      if (rec) { target = this.addressedIn(p, rec.message); heard = rec; }
+    }
+    if (r.tell && typeof r.tell === 'object' && typeof r.tell.message === 'string' && r.tell.message.trim()) {
+      const to = this.player(r.tell.to) || this.addressedIn(p, r.tell.to || '');
+      if (to && !to.bankrupt && to.id !== p.id) {
+        const rec = this.say(p, r.tell.message, to.id);
+        if (rec) { target = to; heard = rec; }
+      }
+    }
+    if (allowReply && target && heard && !target.bankrupt) {
+      await this.decide(target, 'reply', { from: p.id, fromName: p.name, message: heard.message, private: heard.to != null });
+    }
   }
 
   validate(p, type, ctx, r) {
@@ -214,7 +255,8 @@ export class Game {
         if (!Number.isFinite(b) || b < 0) return { ok: false, reason: 'bid must be a number >= 0' };
         return { ok: true };
       }
-      case 'trade_response': return typeof r.accept === 'boolean' ? { ok: true } : { ok: false, reason: 'accept must be boolean' };
+      case 'trade_response': return typeof r.accept === 'boolean' || (r.counter && typeof r.counter === 'object') ? { ok: true } : { ok: false, reason: 'accept must be boolean (or give a counter offer)' };
+      case 'reply': return { ok: true };
       case 'choose_space': {
         const s = Number(r.space);
         return ctx.options.some((o) => o.i === s) ? { ok: true } : { ok: false, reason: 'space not in options' };
@@ -238,7 +280,8 @@ export class Game {
     let endReason = 'last_standing';
     outer: while (true) {
       this.round++;
-      if (this.round > this.config.maxRounds) { this.round--; endReason = 'round_limit'; break; }
+      const limit = this.config.maxRounds || 1000;
+      if (this.round > limit) { this.round--; endReason = this.config.maxRounds ? 'round_limit' : 'safety_stop'; break; }
       for (const p of this.players) {
         if (p.bankrupt) continue;
         if (this.stopped) { endReason = 'stopped'; break outer; }
@@ -250,7 +293,7 @@ export class Game {
     const ranking = this.players
       .map((p) => ({ id: p.id, name: p.name, bankrupt: p.bankrupt, bankruptRound: p.bankruptRound, cash: p.cash, netWorth: p.bankrupt ? 0 : this.netWorth(p), stats: p.stats }))
       .sort((a, b) => (a.bankrupt !== b.bankrupt ? (a.bankrupt ? 1 : -1) : a.bankrupt ? b.bankruptRound - a.bankruptRound : b.netWorth - a.netWorth));
-    this.result = { winnerId: ranking[0].id, winnerName: ranking[0].name, ranking, rounds: this.round, turns: this.turn, endReason, durationMs: Date.now() - this.startedAt };
+    this.result = { winnerId: ranking[0].id, winnerName: ranking[0].name, ranking, rounds: this.round, turns: this.turn, endReason, durationMs: Date.now() - this.startedAt, messages: this.chat.length };
     this.log('game_end', this.result);
     return this.result;
   }
@@ -802,26 +845,55 @@ export class Game {
   }
 
   // ---------- trades ----------
-  async proposeTrade(p, a) {
-    const to = this.player(a.to);
+  normaliseOffer(from, to, a) {
     const give = { props: (a.give && Array.isArray(a.give.properties) ? a.give.properties : []).map(Number), cash: Math.max(0, Math.floor(Number(a.give && a.give.cash) || 0)) };
     const get = { props: (a.get && Array.isArray(a.get.properties) ? a.get.properties : []).map(Number), cash: Math.max(0, Math.floor(Number(a.get && a.get.cash) || 0)) };
-    const invalid = (why) => this.log('illegal_action', { player: p.id, action: a, reason: why });
-    if (!to || to.bankrupt || to.id === p.id) return invalid('invalid counterparty');
-    if (!give.props.length && !get.props.length) return invalid('trade must involve a property');
-    for (const i of give.props) if (!this.props[i] || this.props[i].owner !== p.id || this.props[i].level > 0) return invalid(`cannot give property ${i}`);
-    for (const i of get.props) if (!this.props[i] || this.props[i].owner !== to.id || this.props[i].level > 0) return invalid(`cannot receive property ${i}`);
-    if (give.cash > p.cash) return invalid('not enough cash to give');
-    if (get.cash > to.cash) return invalid('counterparty lacks cash');
-    const offer = { from: p.id, to: to.id, give, get, message: typeof a.message === 'string' ? a.message.slice(0, 300) : undefined };
+    if (!to || to.bankrupt || to.id === from.id) return { error: 'invalid counterparty' };
+    if (!give.props.length && !get.props.length) return { error: 'trade must involve a property' };
+    for (const i of give.props) if (!this.props[i] || this.props[i].owner !== from.id || this.props[i].level > 0) return { error: `cannot give property ${i}` };
+    for (const i of get.props) if (!this.props[i] || this.props[i].owner !== to.id || this.props[i].level > 0) return { error: `cannot receive property ${i}` };
+    if (give.cash > from.cash) return { error: 'not enough cash to give' };
+    if (get.cash > to.cash) return { error: 'counterparty lacks cash' };
+    return { offer: { from: from.id, to: to.id, give, get, message: typeof a.message === 'string' ? a.message.slice(0, 400) : undefined } };
+  }
+  offerCtx(offer) {
+    return { ...offer, giveNames: offer.give.props.map((i) => this.board[i].name), getNames: offer.get.props.map((i) => this.board[i].name) };
+  }
+  async proposeTrade(p, a) {
+    const to = this.player(a.to) || this.addressedIn(p, a.to || '');
+    const n = this.normaliseOffer(p, to, a);
+    if (n.error) { this.log('illegal_action', { player: p.id, action: a, reason: n.error }); return; }
+    let offer = n.offer;
     this.log('trade_proposed', offer);
-    const r = await this.decide(to, 'trade_response', { offer: { ...offer, giveNames: give.props.map((i) => this.board[i].name), getNames: get.props.map((i) => this.board[i].name) } });
-    this.log('trade_response', { ...offer, accept: r.accept, source: r.__source, reason: r.reason });
-    if (!r.accept) return;
-    for (const i of give.props) this.props[i].owner = to.id;
-    for (const i of get.props) this.props[i].owner = p.id;
-    p.cash -= give.cash; to.cash += give.cash;
-    to.cash -= get.cash; p.cash += get.cash;
+    if (offer.message) this.say(p, offer.message, null);
+    // Negotiation: the receiver of the current offer may accept, reject or counter.
+    for (let round = 0; round < this.config.maxNegotiationRounds; round++) {
+      const receiver = this.player(offer.to), sender = this.player(offer.from);
+      const r = await this.decide(receiver, 'trade_response', { offer: this.offerCtx(offer), round });
+      if (r.accept === true) {
+        this.log('trade_response', { ...offer, accept: true, source: r.__source, reason: r.reason });
+        this.executeTrade(offer);
+        return;
+      }
+      if (r.counter && typeof r.counter === 'object') {
+        // The counter is written from the receiver's point of view (give = what they give).
+        const c = this.normaliseOffer(receiver, sender, { give: r.counter.give, get: r.counter.get, message: r.counter.message });
+        if (c.error) { this.log('trade_response', { ...offer, accept: false, source: r.__source, reason: `counter invalid (${c.error}); ${r.reason || ''}` }); return; }
+        offer = c.offer;
+        this.log('trade_counter', { ...offer, round: round + 1, source: r.__source, reason: r.reason });
+        continue;
+      }
+      this.log('trade_response', { ...offer, accept: false, source: r.__source, reason: r.reason });
+      return;
+    }
+    this.log('trade_lapsed', { ...offer, reason: 'negotiation limit reached' });
+  }
+  executeTrade(offer) {
+    const p = this.player(offer.from), to = this.player(offer.to);
+    for (const i of offer.give.props) this.props[i].owner = to.id;
+    for (const i of offer.get.props) this.props[i].owner = p.id;
+    p.cash -= offer.give.cash; to.cash += offer.give.cash;
+    to.cash -= offer.get.cash; p.cash += offer.get.cash;
     p.stats.trades++; to.stats.trades++;
     this.log('trade_completed', { ...offer, cashFrom: p.cash, cashTo: to.cash });
   }

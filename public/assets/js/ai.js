@@ -25,7 +25,7 @@ export function rulesText(game) {
     '- Mortgage: receive half the list price; no rent is collected on a mortgaged property; unmortgage for 55% of list price (mortgage value plus 10% interest). You cannot mortgage a street while any property in that group has buildings. Selling buildings returns half their cost.',
     `- Jail: pay ${gbp(game.config.jailFine)} before rolling, use a Get Out of Jail Free card, or try for doubles for up to three turns (then you must pay). Three doubles in one turn sends you to Jail.`,
     '- Income Tax £200, Super Tax £100. Chance and Community Chest cards as in the UK edition.',
-    '- Trading: on your turn, before rolling, you may propose a trade (properties without buildings and/or cash) to one opponent; they accept or reject. Only one proposal per turn.',
+    '- Trading: on your turn, before rolling, you may propose trades (properties without buildings and/or cash) to opponents. The other side can accept, reject, or counter with their own offer, and the negotiation continues back and forth until someone accepts or walks away.',
     '- Bankruptcy: if you cannot pay, you must sell buildings and mortgage until you can; if that is impossible your assets go to the creditor (or the bank, which auctions them).',
   ];
   if (mega) {
@@ -37,6 +37,9 @@ export function rulesText(game) {
     );
   }
   lines.push(
+    '',
+    'TABLE TALK',
+    'This is a real table of players, so talk like one. In any reply you may add "say": "..." (heard by everyone) and/or "tell": {"to": "<playerId>", "message": "..."} (a private word with one player). Use it the way people do at a Monopoly table: open negotiations, pitch deals, push back, bluff, make alliances, needle an opponent, react to what others said. When someone addresses you, you get a chance to answer. Everything said is recorded; what others said recently appears under RECENT TABLE TALK. Keep each message to a sentence or two.',
     '',
     'RESPONSE FORMAT',
     'Reply with exactly one JSON object and nothing else: no markdown fences, no prose. Include a "reason" string of at most one short sentence. Use property indexes (the numbers in the board table) when naming properties. Never propose an action that is not in the legal options you are given.',
@@ -75,23 +78,30 @@ export function stateText(game, p) {
   }
   for (const [g, arr] of Object.entries(groups)) lines.push(`  ${g}: ` + arr.join(' | '));
   lines.push(`Bank: ${game.bank.houses} houses, ${game.bank.hotels} hotels${game.edition === 'mega' ? `, ${game.bank.skyscrapers} skyscrapers, ${game.bank.depots} depots, ${game.bank.busTickets} bus tickets` : ''}.`);
+  const recent = game.chat.filter((c) => c.to == null || c.to === p.id || c.from === p.id).slice(-30);
+  if (recent.length) {
+    lines.push('RECENT TABLE TALK:');
+    for (const c of recent) lines.push(`- [r${c.round}] ${game.player(c.from).name}${c.to ? ` (privately to ${c.to === p.id ? 'you' : game.player(c.to).name})` : ''}: ${c.message}`);
+  }
   return lines.join('\n');
 }
 
 export function decisionText(game, p, type, ctx) {
   switch (type) {
     case 'buy':
-      return `DECISION: buy\nYou landed on ${ctx.property.i} ${ctx.property.name} [${GROUPS[ctx.property.group].name}], list price £${ctx.property.price}. You have £${ctx.cash}. If you decline it is auctioned.\nRespond: {"buy": true|false, "reason": "..."}`;
+      return `DECISION: buy\nYou landed on ${ctx.property.i} ${ctx.property.name} [${GROUPS[ctx.property.group].name}], list price £${ctx.property.price}. You have £${ctx.cash}. If you decline it is auctioned.\nRespond: {"buy": true|false, "say": "...", "reason": "..."}`;
     case 'bid':
-      return `DECISION: bid\nSealed-bid auction for ${ctx.property.i} ${ctx.property.name} [${GROUPS[ctx.property.group].name}], list price £${ctx.property.price}. Bidders: ${ctx.bidders.join(', ')}. You have £${ctx.cash}. Highest bid wins and pays that amount; 0 means no bid.\nRespond: {"bid": <integer 0..${ctx.cash}>, "reason": "..."}`;
+      return `DECISION: bid\nSealed-bid auction for ${ctx.property.i} ${ctx.property.name} [${GROUPS[ctx.property.group].name}], list price £${ctx.property.price}. Bidders: ${ctx.bidders.join(', ')}. You have £${ctx.cash}. Highest bid wins and pays that amount; 0 means no bid.\nRespond: {"bid": <integer 0..${ctx.cash}>, "say": "...", "reason": "..."}`;
     case 'trade_response': {
       const o = ctx.offer;
-      return `DECISION: trade_response\n${o.from} offers you: ${o.giveNames.length ? o.giveNames.join(', ') : 'no properties'}${o.give.cash ? ` + £${o.give.cash}` : ''}. In return they want: ${o.getNames.length ? o.getNames.join(', ') : 'no properties'}${o.get.cash ? ` + £${o.get.cash}` : ''}.${o.message ? ` Their message: "${o.message}"` : ''}\nRespond: {"accept": true|false, "reason": "..."}`;
+      return `DECISION: trade_response${ctx.round ? ` (negotiation round ${ctx.round + 1})` : ''}\n${game.player(o.from).name} (${o.from}) offers you: ${o.giveNames.length ? o.giveNames.map((n, k) => `${o.give.props[k]} ${n}`).join(', ') : 'no properties'}${o.give.cash ? ` + £${o.give.cash}` : ''}. In return they want: ${o.getNames.length ? o.getNames.map((n, k) => `${o.get.props[k]} ${n}`).join(', ') : 'no properties'}${o.get.cash ? ` + £${o.get.cash}` : ''}.${o.message ? ` Their message: "${o.message}"` : ''}\nYou may accept, reject, or counter with your own offer (written from YOUR side: "give" is what you hand over, "get" is what you receive; only properties without buildings).\nRespond: {"accept": true|false, "counter": {"give": {"properties": [i], "cash": n}, "get": {"properties": [i], "cash": n}, "message": "..."} (optional, only when accept is false), "say": "...", "reason": "..."}`;
     }
     case 'choose_space':
       return `DECISION: choose_space (${ctx.purpose === 'triples' ? 'you rolled TRIPLES and may move to any square' : 'choose a square'})\nOptions (index name, owner): ${ctx.options.map((o) => `${o.i} ${o.name}${o.price ? ` £${o.price} ${o.owner ? 'owner ' + o.owner : 'unowned'}` : ''}`).join('; ')}\nRespond: {"space": <index>, "reason": "..."}`;
     case 'choose_property':
       return `DECISION: choose_property\nYou landed on the Auction square: choose an unowned property to be auctioned among all players. Options: ${ctx.options.map((o) => `${o.i} ${o.name} £${o.price}`).join('; ')}\nRespond: {"property": <index>, "reason": "..."}`;
+    case 'reply':
+      return `DECISION: reply\n${ctx.fromName} (${ctx.from}) just ${ctx.private ? 'said to you privately' : 'said at the table'}: "${ctx.message}"\nAnswer them if you want to (or stay silent with empty strings). You cannot take game actions here; propose trades on your own turn.\nRespond: {"say": "...", "tell": {"to": "${ctx.from}", "message": "..."}, "reason": "..."}`;
     case 'raise_cash':
       return `DECISION: raise_cash\nYou owe £${ctx.needed} (${ctx.reason}) but have £${ctx.cash}: shortfall £${ctx.shortfall}. Choose what to liquidate, in order. Sell options (refund each): ${ctx.canSell.map((s) => `${s.i} ${s.name} level ${s.level} → £${s.refund}`).join('; ') || 'none'}. Mortgage options: ${ctx.canMortgage.map((m) => `${m.i} ${m.name} → £${m.value}`).join('; ') || 'none'}.\nRespond: {"actions": [{"type": "mortgage", "property": i} | {"type": "sell_house", "property": i, "count": n}], "reason": "..."}`;
     case 'preroll': {
@@ -105,8 +115,8 @@ export function decisionText(game, p, type, ctx) {
       if (ctx.busTargets.length) parts.push(`Bus ticket: instead of rolling, move to one of: ${ctx.busTargets.map((i) => `${i} ${game.sqName(i)}`).join('; ')}`);
       const others = game.alive().filter((o) => o.id !== p.id);
       const tradeable = others.map((o) => `${o.id}: ${game.ownedBy(o).filter((i) => game.props[i].level === 0).map((i) => `${i} ${game.sqName(i)}`).join(', ') || 'nothing tradeable'}`);
-      parts.push(`Trade: you may propose ONE trade. Only properties without buildings can change hands. Opponents' tradeable properties: ${tradeable.join(' || ')}`);
-      parts.push('Respond: {"actions": [ {"type":"build","property":i,"count":n} | {"type":"sell_house","property":i,"count":n} | {"type":"mortgage","property":i} | {"type":"unmortgage","property":i} | {"type":"build_depot","property":i} | {"type":"use_bus_ticket","target":i} | {"type":"propose_trade","to":"playerId","give":{"properties":[i],"cash":n},"get":{"properties":[i],"cash":n},"message":"short pitch"} ], "jail": "pay"|"card"|"roll", "reason": "..."}  Use an empty actions array to do nothing. Actions are applied in order and each must be affordable at that point.');
+      parts.push(`Trade: you may propose trades (each one is negotiated to a conclusion before the next). Only properties without buildings can change hands. Opponents' tradeable properties: ${tradeable.join(' || ')}`);
+      parts.push('Respond: {"actions": [ {"type":"build","property":i,"count":n} | {"type":"sell_house","property":i,"count":n} | {"type":"mortgage","property":i} | {"type":"unmortgage","property":i} | {"type":"build_depot","property":i} | {"type":"use_bus_ticket","target":i} | {"type":"propose_trade","to":"playerId","give":{"properties":[i],"cash":n},"get":{"properties":[i],"cash":n},"message":"your pitch, said aloud"} ], "jail": "pay"|"card"|"roll", "say": "...", "tell": {"to": "playerId", "message": "..."}, "reason": "..."}  Use an empty actions array to do nothing. Actions are applied in order and each must be affordable at that point.');
       return parts.join('\n');
     }
     default:
@@ -131,7 +141,7 @@ export class AIDecider {
   // options: { keys: {provider: key}, baseUrls: {provider: url}, universal, maxTokens, timeoutMs, concurrency, logPrompts }
   constructor(playerConfigs, options = {}) {
     this.cfg = playerConfigs;
-    this.opt = { maxTokens: 1200, timeoutMs: 90000, concurrency: 8, logPrompts: true, ...options };
+    this.opt = { maxTokens: 4000, timeoutMs: 600000, concurrency: 8, logPrompts: true, ...options };
     this.cache = new WeakMap();
   }
 

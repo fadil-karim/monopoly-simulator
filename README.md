@@ -31,11 +31,17 @@ localStorage and each call goes straight from the browser to the provider.
   model rejects the parameter the call is retried without it.
 - Per-player and universal **strategy instructions** injected into the system
   prompt.
-- Built for speed: the model is only asked when a decision matters (buy,
-  auction bid, trade, pre-roll building when something is possible), sealed
-  bids are gathered in parallel, games run concurrently, Anthropic calls use
-  prompt caching, and any failed or malformed reply falls back instantly to the
-  rule-based heuristics so a game never stalls.
+- **Table talk**: every reply can carry a public remark or a private word to
+  one opponent, a player who is addressed gets to answer, trade proposals are
+  negotiated with counter-offers until someone accepts or walks away, and the
+  recent conversation is shown to each model with the game state. Nothing is
+  rationed: players act before every roll, choose their own liquidations and
+  may propose as many trades as they like; games run until one player is left
+  unless you set a round limit.
+- Fast where it costs nothing: sealed bids are gathered in parallel, games run
+  concurrently, Anthropic calls use prompt caching, and any failed or malformed
+  reply falls back instantly to the rule-based heuristics so a game never
+  stalls.
 - **Logs**: each game record holds config, seating, every event (dice, moves,
   rent, cards, builds, trades, bankruptcies), per-round net-worth snapshots and
   every model call. Export one game, all games as JSON or JSONL, or a per-player
@@ -89,9 +95,13 @@ wrangler.jsonc               Cloudflare Workers static-assets config
 - Mega edition rents for the eight extra streets follow the price-matched
   rent rows of the standard board; skyscraper rent is hotel rent + £500 on the
   first two sides and + £1000 on the last two.
-- Birthday Gift pays £100 from the bank. The speed die's Bus face takes a Bus
-  Ticket. A bus ticket moves you to any square ahead on your current side, up
-  to the next corner.
+- The Mega edition always rolls the speed die, as in the boxed game. Birthday
+  Gift pays £100 from the bank. The speed die's Bus face takes a Bus Ticket. A
+  bus ticket moves you to any square ahead on your current side, up to the next
+  corner.
+- A single negotiation lapses after eight counter-offers, and a turn allows
+  ten separate trade proposals; both are guards against loops, not gameplay
+  limits.
 - Income Tax is a flat £200. Chance "nearest station" pays double rent and
   "nearest utility" pays ten times the dice.
 

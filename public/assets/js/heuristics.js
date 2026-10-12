@@ -134,6 +134,8 @@ export function heuristicDecide(game, p, type, ctx) {
       for (const s of sells) { if (cash >= ctx.needed) break; actions.push({ type: 'sell_house', property: s.i, count: 1 }); cash += s.refund; }
       return { actions, reason: 'heuristic' };
     }
+    case 'reply':
+      return { say: '' };
     default:
       return {};
   }

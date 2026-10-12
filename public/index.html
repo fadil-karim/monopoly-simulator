@@ -39,13 +39,9 @@
                 <option value="mega">London Mega edition (52 squares, speed die, £2,500)</option>
               </select>
             </label>
-            <div class="row mega-only">
-              <label class="check"><input type="checkbox" name="speedDie" checked> Speed die</label>
-              <label class="check"><input type="checkbox" name="speedDieFromStart" checked> Speed die from the first turn</label>
-            </div>
             <div class="row">
               <label>Starting cash <input type="number" name="startingCash" placeholder="edition default" min="100" step="50"></label>
-              <label>Round limit <input type="number" name="maxRounds" value="100" min="5" max="1000"></label>
+              <label>Round limit (optional) <input type="number" name="maxRounds" placeholder="play to the end" min="5" max="1000"></label>
               <label>Games to run <input type="number" name="games" value="1" min="1" max="500"></label>
               <label>Games in parallel <input type="number" name="concurrency" value="1" min="1" max="20"></label>
               <label>Seed (optional) <input type="number" name="seed" placeholder="random"></label>
@@ -56,22 +52,11 @@
               <label class="check"><input type="checkbox" name="shuffleOrder" checked> Random seating order each game</label>
               <label class="check"><input type="checkbox" name="freeParkingJackpot"> Free Parking jackpot (house rule)</label>
             </div>
-            <h3>Speed</h3>
+            <p class="muted">Every player gets a say before every roll, decides their own liquidations, can propose as many trades as they like, negotiates with counter-offers, and can talk to the table publicly or whisper to one opponent. Games run until one player is left unless you set a round limit.</p>
+            <h3>Advanced</h3>
             <div class="row">
-              <label>Ask the model before rolling
-                <select name="aiPreroll">
-                  <option value="useful" selected>Only when something is possible (fast)</option>
-                  <option value="always">Every turn (slow, more trading)</option>
-                  <option value="never">Never (rule-based building only)</option>
-                </select>
-              </label>
-              <label class="check"><input type="checkbox" name="aiRaiseCash"> Model chooses what to liquidate when short of cash</label>
-              <label>Trade proposals per turn <input type="number" name="maxTradesPerTurn" value="1" min="0" max="3"></label>
-            </div>
-            <div class="row">
-              <label>Max reply tokens <input type="number" name="maxTokens" value="1200" min="100" max="16000"></label>
-              <label>Call timeout (s) <input type="number" name="timeoutMs" value="90" min="5" max="600"></label>
               <label>Parallel calls per provider <input type="number" name="apiConcurrency" value="8" min="1" max="64"></label>
+              <label>Call timeout (s) <input type="number" name="timeoutMs" value="600" min="5" max="3600"></label>
               <label class="check"><input type="checkbox" name="logPrompts" checked> Store full prompts and replies in the log</label>
             </div>
           </div>
@@ -89,7 +74,7 @@
       <div class="card">
         <h2>Universal strategy instructions</h2>
         <p class="muted">Given to every player, in addition to each player's own instructions.</p>
-        <textarea id="universal" rows="4" placeholder="e.g. Play to win on net worth. Prefer completing orange and red sets. Never pay more than 150% of list price in auctions."></textarea>
+        <textarea id="universal" rows="4" placeholder="e.g. Play like a seasoned human player: talk to the table, negotiate hard, build alliances when useful, and never trade away a monopoly cheaply."></textarea>
       </div>
 
       <div class="actions">
@@ -112,6 +97,8 @@
         <div class="board-wrap"><div id="board" class="board"></div></div>
         <aside class="side">
           <div id="player-cards" class="player-cards"></div>
+          <div class="feed-head"><h3>Table talk</h3></div>
+          <div id="chat" class="feed chat"></div>
           <div class="feed-head"><h3>Events</h3><label class="check small"><input type="checkbox" id="feed-pause"> pause</label></div>
           <div id="events" class="feed"></div>
           <details open>

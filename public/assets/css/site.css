@@ -119,6 +119,9 @@ input[type=color] { width: 40px; height: 32px; padding: 2px; border: 1px solid v
 .feed .ev-bankrupt, .feed .ev-game_end { color: var(--accent-2); font-weight: 700; }
 .feed .ev-purchase, .feed .ev-auction_won, .feed .ev-build { color: var(--accent); }
 .feed.llm { height: 220px; }
+.feed.chat { height: 200px; font-family: inherit; font-size: 13px; }
+.feed.chat .who { font-weight: 700; color: var(--c); }
+.feed.chat .priv { color: var(--muted); font-style: italic; }
 .feed.llm .err { color: var(--danger); }
 details summary { cursor: pointer; margin: 10px 0 6px; font-weight: 600; }
 

@@ -1,0 +1,14 @@
+Done and released as v1.1 on main.
+
+**What changed**
+- The speed-die switches are gone from the settings. The Mega edition always rolls the speed die, as in the boxed game; the standard London board never does.
+- Table talk. Every reply a model gives can carry a public remark ("say") or a private word to one opponent ("tell"). When a player is addressed by name, they get a turn to answer. Recent conversation, including the whispers a player sent or received, is shown to each model with the game state, so they can respond to what was actually said.
+- Trades are negotiated. The other side can accept, reject or counter with their own offer, and it goes back and forth until someone accepts or walks away. Any pitch attached to an offer is said aloud at the table.
+- Limits removed. Every player acts before every roll, chooses their own liquidations when short of cash, and can propose as many trades as they like. The round limit is optional: leave it blank and the game runs until one player is left. The reply-token and pre-roll settings are gone; the only things left under Advanced are the per-provider parallel-call count, the call timeout (now ten minutes) and the prompt-logging switch.
+- The Play tab has a Table talk panel, saved games show the full conversation, and the analytics table and CSV count messages per player.
+
+**Verified**: wrangler dry-run passes; 100 headless rule-based games across both editions finish with zero illegal actions and the stock and cash invariants holding; the page was driven in headless Chromium through setup, a three-game batch, saved games and analytics with no console errors; and a run against a mock OpenAI-compatible server produced public chat, private whispers, replies to addressed players, counter-offers and completed trades.
+
+**Two things to know**
+- Your browser will still show the old round limit of 100 from the previous settings. Clear that box once to play to the end.
+- Two guards remain purely to stop loops, not to pace play: a single negotiation lapses after eight counter-offers, and one turn allows ten separate trade proposals.

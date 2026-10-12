@@ -7,14 +7,14 @@ export function aggregate(records) {
     const n = r.players.length;
     for (const p of r.players) {
       const key = `${p.name} · ${p.provider === 'heuristic' ? 'heuristic' : p.model || p.provider}${p.effort ? ' @' + p.effort : ''}`;
-      const a = byKey[key] || (byKey[key] = { key, name: p.name, provider: p.provider, model: p.model, effort: p.effort, games: 0, wins: 0, rankSum: 0, bankrupt: 0, netWorth: 0, calls: 0, fallbacks: 0, latency: 0, inTok: 0, outTok: 0, cached: 0, reasoning: 0, trades: 0, auctions: 0, bought: 0, rentCollected: 0, rentPaid: 0, illegal: 0 });
+      const a = byKey[key] || (byKey[key] = { key, name: p.name, provider: p.provider, model: p.model, effort: p.effort, games: 0, wins: 0, rankSum: 0, bankrupt: 0, netWorth: 0, calls: 0, fallbacks: 0, latency: 0, inTok: 0, outTok: 0, cached: 0, reasoning: 0, trades: 0, auctions: 0, bought: 0, rentCollected: 0, rentPaid: 0, illegal: 0, messages: 0 });
       a.games++;
       const rank = r.result.ranking.findIndex((x) => x.id === p.id) + 1;
       a.rankSum += rank / n;
       if (r.result.winnerId === p.id) a.wins++;
       if (p.bankrupt) a.bankrupt++;
       a.netWorth += p.finalNetWorth || 0;
-      a.trades += p.stats.trades; a.auctions += p.stats.auctionsWon; a.bought += p.stats.bought; a.rentCollected += p.stats.rentCollected; a.rentPaid += p.stats.rentPaid;
+      a.trades += p.stats.trades; a.messages += p.stats.messages || 0; a.auctions += p.stats.auctionsWon; a.bought += p.stats.bought; a.rentCollected += p.stats.rentCollected; a.rentPaid += p.stats.rentPaid;
       for (const c of r.llmCalls || []) {
         if (c.player !== p.id) continue;
         a.calls++;
@@ -29,11 +29,11 @@ export function aggregate(records) {
 }
 
 export function csvSummary(records) {
-  const rows = [['game', 'created', 'batch', 'edition', 'rounds', 'turns', 'endReason', 'durationMs', 'winner', 'player', 'provider', 'model', 'effort', 'rank', 'finalNetWorth', 'finalCash', 'bankrupt', 'bankruptRound', 'llmCalls', 'fallbacks', 'trades', 'auctionsWon', 'bought', 'rentCollected', 'rentPaid']];
+  const rows = [['game', 'created', 'batch', 'edition', 'rounds', 'turns', 'endReason', 'durationMs', 'winner', 'player', 'provider', 'model', 'effort', 'rank', 'finalNetWorth', 'finalCash', 'bankrupt', 'bankruptRound', 'llmCalls', 'fallbacks', 'trades', 'messages', 'auctionsWon', 'bought', 'rentCollected', 'rentPaid']];
   for (const r of records) {
     for (const p of r.players) {
       const rank = r.result && r.result.ranking ? r.result.ranking.findIndex((x) => x.id === p.id) + 1 : '';
-      rows.push([r.id, r.createdAt, r.batchId || '', r.edition, r.result?.rounds ?? '', r.result?.turns ?? '', r.result?.endReason ?? '', r.result?.durationMs ?? '', r.result?.winnerName ?? '', p.name, p.provider, p.model || '', p.effort || '', rank, p.finalNetWorth, p.finalCash, p.bankrupt, p.bankruptRound ?? '', p.stats.llmCalls, p.stats.fallbacks, p.stats.trades, p.stats.auctionsWon, p.stats.bought, p.stats.rentCollected, p.stats.rentPaid]);
+      rows.push([r.id, r.createdAt, r.batchId || '', r.edition, r.result?.rounds ?? '', r.result?.turns ?? '', r.result?.endReason ?? '', r.result?.durationMs ?? '', r.result?.winnerName ?? '', p.name, p.provider, p.model || '', p.effort || '', rank, p.finalNetWorth, p.finalCash, p.bankrupt, p.bankruptRound ?? '', p.stats.llmCalls, p.stats.fallbacks, p.stats.trades, p.stats.messages || 0, p.stats.auctionsWon, p.stats.bought, p.stats.rentCollected, p.stats.rentPaid]);
     }
   }
   return rows.map((r) => r.map((v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n');

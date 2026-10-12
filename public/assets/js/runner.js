@@ -68,6 +68,7 @@ export function gameRecord(game, setup) {
     result: game.result,
     snapshots: game.snapshots,
     finalProperties: game.props,
+    chat: game.chat,
     events: game.events,
     llmCalls: game.llmCalls,
   };

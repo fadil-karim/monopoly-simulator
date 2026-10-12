@@ -197,16 +197,13 @@ function buildSetup() {
   const config = {
     edition: f.edition,
     startingCash: f.startingCash ? Number(f.startingCash) : null,
-    maxRounds: Number(f.maxRounds) || 100,
-    speedDie: !!f.speedDie,
-    speedDieFromStart: !!f.speedDieFromStart,
+    maxRounds: f.maxRounds ? Number(f.maxRounds) : null,
     auctionOnDecline: !!f.auctionOnDecline,
     bankAuction: !!f.bankAuction,
     shuffleOrder: !!f.shuffleOrder,
     freeParkingJackpot: !!f.freeParkingJackpot,
-    aiPreroll: f.aiPreroll,
-    aiRaiseCash: !!f.aiRaiseCash,
-    maxTradesPerTurn: Number(f.maxTradesPerTurn) || 0,
+    aiPreroll: 'always',
+    aiRaiseCash: true,
   };
   return {
     batchId: `batch-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`,
@@ -218,8 +215,8 @@ function buildSetup() {
     seed: f.seed,
     keys,
     baseUrls: { custom: keys.customBase },
-    maxTokens: Number(f.maxTokens) || 1200,
-    timeoutMs: (Number(f.timeoutMs) || 90) * 1000,
+    maxTokens: 4000,
+    timeoutMs: (Number(f.timeoutMs) || 600) * 1000,
     apiConcurrency: Number(f.apiConcurrency) || 8,
     logPrompts: !!f.logPrompts,
   };
@@ -236,6 +233,7 @@ $('#start').addEventListener('click', async () => {
   watched = null;
   $('#events').innerHTML = '';
   $('#llm-feed').innerHTML = '';
+  $('#chat').innerHTML = '';
   $('#watch').innerHTML = '';
   $('#stop').disabled = false;
   showTab('play');
@@ -250,7 +248,7 @@ $('#start').addEventListener('click', async () => {
       queueRender();
     },
     onEvent(ev, game) {
-      if (game.id === watched) { appendEvent(ev, game); queueRender(); }
+      if (game.id === watched) { appendEvent(ev, game); if (ev.type === 'chat') appendChat(ev, game); queueRender(); }
     },
     onLlm(rec, game) {
       stats.calls++;
@@ -267,7 +265,7 @@ $('#start').addEventListener('click', async () => {
       updateProgress(stats);
       if (game.id === watched) {
         const next = Array.from(liveGames.values()).find((g) => !g.result);
-        if (next) { watched = next.id; $('#watch').value = next.id; $('#events').innerHTML = ''; $('#llm-feed').innerHTML = ''; queueRender(); }
+        if (next) { watched = next.id; $('#watch').value = next.id; $('#events').innerHTML = ''; $('#llm-feed').innerHTML = ''; $('#chat').innerHTML = ''; queueRender(); }
       }
     },
     onDone(summary) {
@@ -280,7 +278,7 @@ $('#start').addEventListener('click', async () => {
   runner.run().catch((e) => { console.error(e); $('#progress').textContent = `Error: ${e.message}`; runner = null; $('#stop').disabled = true; });
 });
 $('#stop').addEventListener('click', () => { if (runner) runner.stop(); });
-$('#watch').addEventListener('change', (e) => { watched = e.target.value; $('#events').innerHTML = ''; $('#llm-feed').innerHTML = ''; queueRender(); });
+$('#watch').addEventListener('change', (e) => { watched = e.target.value; $('#events').innerHTML = ''; $('#llm-feed').innerHTML = ''; $('#chat').innerHTML = ''; const g = liveGames.get(watched); if (g) for (const c of g.chat) appendChat({ player: c.from, to: c.to, message: c.message, round: c.round }, g); queueRender(); });
 $('#feed-pause').addEventListener('change', (e) => { feedPaused = e.target.checked; });
 
 function updateProgress(stats, summary) {
@@ -400,7 +398,10 @@ function fmtEvent(e, game) {
     case 'assets_transferred': return `assets go to ${P(e.to)}`;
     case 'trade_proposed': return `${P(e.from)} proposes to ${P(e.to)}: gives ${e.give.props.map((i) => game.sqName(i)).join(', ') || '—'}${e.give.cash ? ' + £' + e.give.cash : ''} for ${e.get.props.map((i) => game.sqName(i)).join(', ') || '—'}${e.get.cash ? ' + £' + e.get.cash : ''}${e.message ? ' — "' + e.message + '"' : ''}`;
     case 'trade_response': return `${P(e.to)} ${e.accept ? 'ACCEPTS' : 'rejects'}${e.reason ? ' — ' + e.reason : ''}`;
+    case 'trade_counter': return `${P(e.from)} counters: gives ${e.give.props.map((i) => game.sqName(i)).join(', ') || '—'}${e.give.cash ? ' + £' + e.give.cash : ''} for ${e.get.props.map((i) => game.sqName(i)).join(', ') || '—'}${e.get.cash ? ' + £' + e.get.cash : ''}${e.reason ? ' — ' + e.reason : ''}`;
+    case 'trade_lapsed': return `negotiation between ${P(e.from)} and ${P(e.to)} ends without a deal`;
     case 'trade_completed': return `trade completed`;
+    case 'chat': return e.to ? `whispers to ${P(e.to)}: “${e.message}”` : `says: “${e.message}”`;
     case 'repairs': return `repairs: ${e.houses} houses, ${e.hotels} hotels → £${e.amount}`;
     case 'mr_monopoly': return e.kind === 'nothing' ? 'Mr Monopoly: nothing to move to' : `Mr Monopoly sends ${P(e.player)} to ${e.name}`;
     case 'bus_ticket_taken': return `takes a bus ticket (${e.via})`;
@@ -426,6 +427,16 @@ function appendEvent(e, game) {
   div.textContent = `[r${e.round}] ${who}${fmtEvent(e, game)}`;
   feed.appendChild(div);
   while (feed.childElementCount > 400) feed.firstElementChild.remove();
+  feed.scrollTop = feed.scrollHeight;
+}
+function appendChat(e, game) {
+  const feed = $('#chat');
+  const div = document.createElement('div');
+  const from = game.player(e.player);
+  const colour = from && from.meta ? from.meta.colour : '#888';
+  div.innerHTML = `<span class="who" style="--c:${esc(colour)}">${esc(nm(game, e.player))}</span>${e.to ? ` <span class="priv">(to ${esc(nm(game, e.to))})</span>` : ''}: ${esc(e.message)}`;
+  feed.appendChild(div);
+  while (feed.childElementCount > 300) feed.firstElementChild.remove();
   feed.scrollTop = feed.scrollHeight;
 }
 function appendLlm(rec) {
@@ -478,13 +489,15 @@ function showGameDetail(r) {
   const calls = r.llmCalls || [];
   el.innerHTML = `<div class="card-head"><h2>${esc(r.id)}</h2><button class="btn small" id="close-detail">Close</button></div>
     <p class="muted">${esc(r.edition)} · ${r.result?.rounds} rounds · ${r.result?.turns} turns · ${((r.result?.durationMs || 0) / 1000).toFixed(1)} s · ${esc(r.result?.endReason)} · seed ${r.seed}</p>
-    <div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>Model</th><th class="num">Net worth</th><th class="num">Cash</th><th class="num">Calls</th><th class="num">Fallbacks</th><th class="num">Avg latency</th><th class="num">Tokens in/out</th><th class="num">Trades</th><th class="num">Rent +/−</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>Model</th><th class="num">Net worth</th><th class="num">Cash</th><th class="num">Calls</th><th class="num">Fallbacks</th><th class="num">Avg latency</th><th class="num">Tokens in/out</th><th class="num">Trades</th><th class="num">Messages</th><th class="num">Rent +/−</th></tr></thead><tbody>
     ${(r.result?.ranking || []).map((rk, i) => { const p = r.players.find((x) => x.id === rk.id); const cs = calls.filter((c) => c.player === p.id); const lat = cs.length ? Math.round(cs.reduce((a, c) => a + (c.latencyMs || 0), 0) / cs.length) : 0; const tin = cs.reduce((a, c) => a + ((c.usage && c.usage.input) || 0), 0), tout = cs.reduce((a, c) => a + ((c.usage && c.usage.output) || 0), 0);
-      return `<tr><td>${i + 1}</td><td><span style="color:${esc(colours[p.id])}">●</span> ${esc(p.name)}${rk.bankrupt ? ' (bankrupt r' + rk.bankruptRound + ')' : ''}</td><td>${esc(p.provider === 'heuristic' ? 'rules' : p.model)}${p.effort ? ' @' + esc(p.effort) : ''}</td><td class="num">£${rk.netWorth.toLocaleString()}</td><td class="num">£${rk.cash.toLocaleString()}</td><td class="num">${cs.length}</td><td class="num">${p.stats.fallbacks}</td><td class="num">${lat} ms</td><td class="num">${tin.toLocaleString()} / ${tout.toLocaleString()}</td><td class="num">${p.stats.trades}</td><td class="num">${p.stats.rentCollected} / ${p.stats.rentPaid}</td></tr>`; }).join('')}
+      return `<tr><td>${i + 1}</td><td><span style="color:${esc(colours[p.id])}">●</span> ${esc(p.name)}${rk.bankrupt ? ' (bankrupt r' + rk.bankruptRound + ')' : ''}</td><td>${esc(p.provider === 'heuristic' ? 'rules' : p.model)}${p.effort ? ' @' + esc(p.effort) : ''}</td><td class="num">£${rk.netWorth.toLocaleString()}</td><td class="num">£${rk.cash.toLocaleString()}</td><td class="num">${cs.length}</td><td class="num">${p.stats.fallbacks}</td><td class="num">${lat} ms</td><td class="num">${tin.toLocaleString()} / ${tout.toLocaleString()}</td><td class="num">${p.stats.trades}</td><td class="num">${p.stats.messages || 0}</td><td class="num">${p.stats.rentCollected} / ${p.stats.rentPaid}</td></tr>`; }).join('')}
     </tbody></table></div>
     <h3>Net worth by round</h3>
     <div class="legend">${series.map((s) => `<span style="--c:${esc(s.colour)}">${esc(s.label)}</span>`).join('')}</div>
     ${lineChart(series, { yLabel: (v) => '£' + v })}
+    <h3>Table talk (${(r.chat || []).length})</h3>
+    <div class="feed chat" style="height:260px">${(r.chat || []).map((c) => { const f = r.players.find((p) => p.id === c.from) || {}; const t = c.to ? (r.players.find((p) => p.id === c.to) || {}).name : null; return `<div><span class="muted">[r${c.round}]</span> <span class="who" style="--c:${esc(f.colour || '#888')}">${esc(f.name || c.from)}</span>${t ? ` <span class="priv">(to ${esc(t)})</span>` : ''}: ${esc(c.message)}</div>`; }).join('')}</div>
     <h3>Model calls (${calls.length})</h3>
     <div class="feed llm" style="height:300px">${calls.map((c) => `<div class="${c.error ? 'err' : ''}">[r${c.round}] ${esc(c.playerName)} · ${esc(c.decision)} · ${esc(c.model)} · ${c.latencyMs} ms · ${c.error ? 'ERROR ' + esc(c.error) : esc(JSON.stringify(c.parsed))}</div>`).join('')}</div>
     <h3>Event log (${r.events.length})</h3>
@@ -511,8 +524,8 @@ async function renderAnalytics() {
   const rounds = recs.map((r) => r.result?.rounds || 0);
   const ends = {}; for (const r of recs) ends[r.result?.endReason] = (ends[r.result?.endReason] || 0) + 1;
   el.innerHTML = `<p class="muted">${recs.length} games · average ${(rounds.reduce((a, b) => a + b, 0) / recs.length).toFixed(1)} rounds · endings: ${Object.entries(ends).map(([k, v]) => `${k} ${v}`).join(', ')} · total model calls ${recs.reduce((a, r) => a + (r.llmCalls || []).length, 0).toLocaleString()}</p>
-    <div class="table-wrap"><table><thead><tr><th>Player · model</th><th class="num">Games</th><th class="num">Wins</th><th class="num">Win %</th><th class="num">Avg rank</th><th class="num">Bankrupt</th><th class="num">Avg net worth</th><th class="num">Calls/game</th><th class="num">Fallback %</th><th class="num">Illegal</th><th class="num">Avg latency</th><th class="num">Tokens/call in/out</th><th class="num">Cached %</th><th class="num">Trades</th><th class="num">Auctions won</th><th class="num">Rent +/−</th></tr></thead><tbody>
-    ${agg.map((a) => `<tr><td><span style="color:${esc(colourFor[a.name] || '#888')}">●</span> ${esc(a.key)}</td><td class="num">${a.games}</td><td class="num">${a.wins}</td><td class="num">${(100 * a.wins / a.games).toFixed(0)}%</td><td class="num">${(a.rankSum / a.games).toFixed(2)}</td><td class="num">${a.bankrupt}</td><td class="num">£${Math.round(a.netWorth / a.games).toLocaleString()}</td><td class="num">${(a.calls / a.games).toFixed(1)}</td><td class="num">${a.calls ? (100 * a.fallbacks / a.calls).toFixed(1) : '0'}%</td><td class="num">${a.illegal}</td><td class="num">${a.calls ? Math.round(a.latency / a.calls) : 0} ms</td><td class="num">${a.calls ? Math.round(a.inTok / a.calls) : 0} / ${a.calls ? Math.round(a.outTok / a.calls) : 0}</td><td class="num">${a.inTok ? (100 * a.cached / a.inTok).toFixed(0) : 0}%</td><td class="num">${a.trades}</td><td class="num">${a.auctions}</td><td class="num">${Math.round(a.rentCollected / a.games)} / ${Math.round(a.rentPaid / a.games)}</td></tr>`).join('')}
+    <div class="table-wrap"><table><thead><tr><th>Player · model</th><th class="num">Games</th><th class="num">Wins</th><th class="num">Win %</th><th class="num">Avg rank</th><th class="num">Bankrupt</th><th class="num">Avg net worth</th><th class="num">Calls/game</th><th class="num">Fallback %</th><th class="num">Illegal</th><th class="num">Avg latency</th><th class="num">Tokens/call in/out</th><th class="num">Cached %</th><th class="num">Trades</th><th class="num">Messages</th><th class="num">Auctions won</th><th class="num">Rent +/−</th></tr></thead><tbody>
+    ${agg.map((a) => `<tr><td><span style="color:${esc(colourFor[a.name] || '#888')}">●</span> ${esc(a.key)}</td><td class="num">${a.games}</td><td class="num">${a.wins}</td><td class="num">${(100 * a.wins / a.games).toFixed(0)}%</td><td class="num">${(a.rankSum / a.games).toFixed(2)}</td><td class="num">${a.bankrupt}</td><td class="num">£${Math.round(a.netWorth / a.games).toLocaleString()}</td><td class="num">${(a.calls / a.games).toFixed(1)}</td><td class="num">${a.calls ? (100 * a.fallbacks / a.calls).toFixed(1) : '0'}%</td><td class="num">${a.illegal}</td><td class="num">${a.calls ? Math.round(a.latency / a.calls) : 0} ms</td><td class="num">${a.calls ? Math.round(a.inTok / a.calls) : 0} / ${a.calls ? Math.round(a.outTok / a.calls) : 0}</td><td class="num">${a.inTok ? (100 * a.cached / a.inTok).toFixed(0) : 0}%</td><td class="num">${a.trades}</td><td class="num">${a.messages}</td><td class="num">${a.auctions}</td><td class="num">${Math.round(a.rentCollected / a.games)} / ${Math.round(a.rentPaid / a.games)}</td></tr>`).join('')}
     </tbody></table></div>
     <h3>Win rate</h3>
     ${barChart(agg.map((a) => ({ label: a.name, value: Math.round(1000 * a.wins / a.games) / 10, colour: colourFor[a.name] })), { valueLabel: (v) => v + '%' })}
