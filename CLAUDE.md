@@ -88,6 +88,13 @@ as before: the board sized from its position so it fills the window, the
 edition line at the top of the centre, the match or the hovered property's
 deed in the middle, the dice and last event boxed at the bottom, the player
 cards beneath with income by source and property and the roll histogram.
+A corner square is its own size container (`.cell.corner`,
+`container-type: inline-size`): its label takes its size from the square
+(`cqw` inside it is the corner's width), capped so the longest word (`--w`
+letters, set by `renderBoard`) stays whole, a one-word corner (GO) set
+larger as on the printed board, and a word that still cannot fit breaks
+rather than clips; the fixed `1em` the first releases gave the corners is
+what spilled FREE PARKING and JUST VISITING past their squares.
 The palette is Monopoly's with the official group colours; the face is Jost.
 The board itself has fixed colours in both themes, taken from the owner's
 photograph of the classic London board: the squares and the centre in the
@@ -218,3 +225,4 @@ no new prompt leaves the archive untouched.
 | v1.4 | The board is always on the table, in any city's names | The board now shows every square whenever there is no game to watch, instead of an empty frame. A selector in the header, with a search box, reads the same board as another edition by position: London, Atlantic City, Paris, the German, Italian and Dutch classics or the 2008 World Edition, and every name and every amount on the page follows, on the squares, in the feeds and deeds, on the player cards and across the statistics, in that edition's currency, without touching the game, even one being watched live. |
 | v1.5 | The board in its own green, as on the box | The board now wears the classic board's colours, taken from the owner's photograph: the same pale green across the squares and the centre, black rules between them, a red edge on a white margin, and cream cards for the figures, the dice and the deeds. It looks the same in the dark theme, where only the page around it changes. |
 | v1.6 | One Perplexity key for the seats, a plain dropdown, a fresh stylesheet | ChatGPT, Grok, Kimi and GLM now play through Perplexity's Agent API with a single key, under the ids it serves, while Claude and Gemini stay direct; a runner option prints a provider's current catalogue. The board edition is a plain dropdown in the header. The scripts and the stylesheet moved to new paths so every browser fetches the current ones, after the earliest releases had told browsers to keep the old stylesheet for a year, which is what left the page unstyled. |
+| v1.7 | The corners of the board read whole | The four corner squares, GO, Jail, Free Parking and Go To Jail, no longer spill their words past the edge of the square: each corner's lettering now takes its size from the square itself and from its longest word, in every edition, with GO set larger as it is on the printed board. |

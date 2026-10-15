@@ -143,8 +143,10 @@ table.models td.mk { font-size: 12px; }
 .cell .name { font-weight: 600; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; text-transform: uppercase; letter-spacing: .01em; }
 .cell .price { color: var(--board-muted); font-size: .9em; }
 .cell .bld { font-size: .9em; color: var(--accent); font-weight: 700; }
-.cell.corner { font-weight: 700; justify-content: center; align-items: center; text-align: center; font-size: 1em; padding: 2px; }
-.cell.corner .name { -webkit-line-clamp: 3; white-space: normal; overflow-wrap: normal; }
+/* a corner is its own size container: its label is sized from the square (cqw here is the corner's width), capped so its longest word (--w letters, from the renderer) stays whole, and a word that still cannot fit breaks rather than clips; a one-word corner (GO) runs larger, as on the printed board */
+.cell.corner { font-weight: 700; justify-content: center; align-items: center; text-align: center; padding: 2px; container-type: inline-size; }
+.cell.corner .name { font-weight: 700; font-size: clamp(5px, min(17.5cqw, calc(139cqw / var(--w, 8))), 14px); line-height: 1.05; -webkit-line-clamp: 5; white-space: normal; overflow-wrap: anywhere; }
+.cell.corner.one .name { font-size: clamp(5px, min(30cqw, calc(139cqw / var(--w, 4))), 22px); }
 .cell.mort { background: repeating-linear-gradient(45deg, var(--cell), var(--cell) 4px, rgba(0,0,0,.14) 4px, rgba(0,0,0,.14) 8px); }
 .cell.focus { outline: 2px solid var(--accent); z-index: 2; }
 .cell.pinned { box-shadow: inset 0 0 0 2px var(--accent); }

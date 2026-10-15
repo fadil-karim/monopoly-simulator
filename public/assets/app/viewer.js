@@ -317,7 +317,10 @@ function renderBoard(game) {
     if (pr && pr.depot) bld += ' DEPOT';
     const toks = (tokensAt[s.i] || []).map((p) => `<span class="tok" style="background:${esc(colourOf[p.id])}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`).join('');
     const side = row === n ? 'bottom' : col === 1 ? 'left' : row === 1 ? 'top' : 'right';
-    html += `<div class="cell ${corner ? 'corner' : ''} ${side} ${pr && pr.mortgaged ? 'mort' : ''} ${s.price ? 'prop' : ''} ${focus === s.i ? 'focus' : ''} ${pinned === s.i ? 'pinned' : ''}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
+    // a corner's label is sized by the stylesheet from the square and its longest word (--w), one-word corners (GO) larger
+    const words = corner ? s.name.split(/\s+/).filter(Boolean) : [];
+    const cornerStyle = corner ? `--w:${Math.max(1, ...words.map((w) => w.length))};` : '';
+    html += `<div class="cell ${corner ? 'corner' : ''} ${corner && words.length === 1 ? 'one' : ''} ${side} ${pr && pr.mortgaged ? 'mort' : ''} ${s.price ? 'prop' : ''} ${focus === s.i ? 'focus' : ''} ${pinned === s.i ? 'pinned' : ''}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};${cornerStyle}${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
       ${s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : ''}
       ${owner ? '<div class="own"></div>' : ''}
       <div class="tokens">${toks}</div>
