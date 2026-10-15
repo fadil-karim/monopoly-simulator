@@ -22,16 +22,16 @@ const RENT = {
 };
 
 export const GROUPS = {
-  brown: { name: 'Brown', colour: '#8b4513', houseCost: 50 },
-  lightblue: { name: 'Light Blue', colour: '#87ceeb', houseCost: 50 },
-  pink: { name: 'Pink', colour: '#d63384', houseCost: 100 },
-  orange: { name: 'Orange', colour: '#f28c28', houseCost: 100 },
-  red: { name: 'Red', colour: '#d7263d', houseCost: 150 },
-  yellow: { name: 'Yellow', colour: '#f2d41e', houseCost: 150 },
-  green: { name: 'Green', colour: '#1a9e4b', houseCost: 200 },
-  darkblue: { name: 'Dark Blue', colour: '#1f4ea3', houseCost: 200 },
-  station: { name: 'Stations', colour: '#444', houseCost: 0 },
-  utility: { name: 'Utilities', colour: '#999', houseCost: 0 },
+  brown: { name: 'Brown', colour: '#955436', houseCost: 50 },
+  lightblue: { name: 'Light Blue', colour: '#aae0fa', houseCost: 50 },
+  pink: { name: 'Pink', colour: '#d93a96', houseCost: 100 },
+  orange: { name: 'Orange', colour: '#f7941d', houseCost: 100 },
+  red: { name: 'Red', colour: '#ed1b24', houseCost: 150 },
+  yellow: { name: 'Yellow', colour: '#fef200', houseCost: 150 },
+  green: { name: 'Green', colour: '#1fb25a', houseCost: 200 },
+  darkblue: { name: 'Dark Blue', colour: '#0072bb', houseCost: 200 },
+  station: { name: 'Stations', colour: '#111111', houseCost: 0 },
+  utility: { name: 'Utilities', colour: '#8c8c8c', houseCost: 0 },
 };
 
 const st = (name, group, price, rentKey) => ({ type: 'street', name, group, price, rents: RENT[rentKey || String(price)], houseCost: GROUPS[group].houseCost });

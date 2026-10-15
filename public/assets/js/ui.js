@@ -5,6 +5,7 @@ import { HOTEL, SKYSCRAPER } from './engine.js';
 import { Runner, gameRecord } from './runner.js';
 import { saveGame, listGames, getGame, deleteGame, clearGames, loadSettings, saveSettings, download } from './store.js';
 import { aggregate, csvSummary, barChart, lineChart } from './analytics.js';
+import { StatsTracker, EXPECTED_ROLLS, meanRoll } from './stats.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -28,6 +29,7 @@ const liveGames = new Map();
 function showTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   $$('.panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${name}`));
+  window.scrollTo(0, 0);
   if (name === 'games') renderGames();
   if (name === 'analytics') renderAnalytics();
 }
@@ -278,7 +280,7 @@ $('#start').addEventListener('click', async () => {
   runner.run().catch((e) => { console.error(e); $('#progress').textContent = `Error: ${e.message}`; runner = null; $('#stop').disabled = true; });
 });
 $('#stop').addEventListener('click', () => { if (runner) runner.stop(); });
-$('#watch').addEventListener('change', (e) => { watched = e.target.value; $('#events').innerHTML = ''; $('#llm-feed').innerHTML = ''; $('#chat').innerHTML = ''; const g = liveGames.get(watched); if (g) for (const c of g.chat) appendChat({ player: c.from, to: c.to, message: c.message, round: c.round }, g); queueRender(); });
+$('#watch').addEventListener('change', (e) => { watched = e.target.value; pinned = null; hovered = null; $('#events').innerHTML = ''; $('#llm-feed').innerHTML = ''; $('#chat').innerHTML = ''; const g = liveGames.get(watched); if (g) for (const c of g.chat) appendChat({ player: c.from, to: c.to, message: c.message, round: c.round }, g); queueRender(); });
 $('#feed-pause').addEventListener('change', (e) => { feedPaused = e.target.checked; });
 
 function updateProgress(stats, summary) {
@@ -303,6 +305,16 @@ function cellPos(i, perSide) {
   return { row: 1 + (i - 3 * perSide), col: n };
 }
 
+let hovered = null;   // square index under the pointer
+let pinned = null;    // square index fixed by a click
+const trackers = new WeakMap();
+function statsOf(game) {
+  let t = trackers.get(game);
+  if (!t) { t = new StatsTracker(game); trackers.set(game, t); }
+  return t.update();
+}
+const money = (n) => '£' + Math.round(n).toLocaleString();
+
 function renderBoard(game) {
   const board = $('#board');
   const per = game.perSide;
@@ -313,6 +325,7 @@ function renderBoard(game) {
   for (const p of game.players) colourOf[p.id] = p.meta.colour || '#888';
   const tokensAt = {};
   for (const p of game.players) if (!p.bankrupt) (tokensAt[p.pos] = tokensAt[p.pos] || []).push(p);
+  const focus = pinned != null ? pinned : hovered;
   let html = '';
   for (const s of game.board) {
     const { row, col } = cellPos(s.i, per);
@@ -323,42 +336,152 @@ function renderBoard(game) {
     if (pr && pr.level) bld = pr.level === SKYSCRAPER ? 'SKY' : pr.level === HOTEL ? 'HOTEL' : '▲'.repeat(pr.level);
     if (pr && pr.depot) bld += ' DEPOT';
     const toks = (tokensAt[s.i] || []).map((p) => `<span class="tok" style="background:${esc(colourOf[p.id])}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`).join('');
-    html += `<div class="cell ${corner ? 'corner' : ''} ${pr && pr.mortgaged ? 'mort' : ''}" style="grid-row:${row};grid-column:${col};${owner ? `border-color:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' £' + s.price : ''}${pr && pr.owner ? ' · ' + esc(game.player(pr.owner).name) : ''}">
+    const side = row === n ? 'bottom' : col === 1 ? 'left' : row === 1 ? 'top' : 'right';
+    html += `<div class="cell ${corner ? 'corner' : ''} ${side} ${pr && pr.mortgaged ? 'mort' : ''} ${s.price ? 'prop' : ''} ${focus === s.i ? 'focus' : ''} ${pinned === s.i ? 'pinned' : ''}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' £' + s.price : ''}${pr && pr.owner ? ' · ' + esc(game.player(pr.owner).name) : ''}">
       ${s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : ''}
+      ${owner ? '<div class="own"></div>' : ''}
       <div class="tokens">${toks}</div>
       <div class="name">${esc(s.name)}</div>
       ${s.price ? `<div class="price">£${s.price}</div>` : ''}
       ${bld ? `<div class="bld">${bld}</div>` : ''}
     </div>`;
   }
+  html += '<div class="centre" id="centre"></div>';
+  board.innerHTML = html;
+  renderCentre(game);
+}
+
+function renderCentre(game) {
+  const el = $('#centre');
+  if (!el) return;
   const last = game.events[game.events.length - 1];
   const lastRoll = [...game.events].reverse().find((e) => e.type === 'roll');
   const cur = game.players.find((p) => p.id === (last && (last.player || last.from)));
-  html += `<div class="centre">
-    <div class="title">MONOPOLY</div>
-    <div class="muted">${esc(EDITION_INFO[game.edition].label)} · round ${game.round} · turn ${game.turn}</div>
-    <div class="dice">${lastRoll ? `🎲 ${lastRoll.dice.join(' + ')}${lastRoll.speed != null ? ` + ${typeof lastRoll.speed === 'number' ? lastRoll.speed : lastRoll.speed === 'mr' ? 'Mr Monopoly' : 'Bus'}` : ''}` : ''}</div>
-    <div class="last">${cur ? esc(cur.name) + ': ' : ''}${last ? esc(fmtEvent(last, game)) : ''}</div>
-    ${game.result ? `<div class="title" style="font-size:16px">Winner: ${esc(game.result.winnerName)}</div>` : ''}
+  const focus = pinned != null ? pinned : hovered;
+  const st = statsOf(game);
+  const middle = focus != null && game.board[focus] && game.board[focus].price ? propertyPanel(game, st, focus) : matchPanel(game, st);
+  el.innerHTML = `
+    <div class="cline">${esc(EDITION_INFO[game.edition].label)} · round ${game.round} · turn ${game.turn}</div>
+    <div class="cmid">${middle}</div>
+    <div class="cbox">
+      <div class="dice">${lastRoll ? `🎲 ${lastRoll.dice.join(' + ')}${lastRoll.speed != null ? ` + ${typeof lastRoll.speed === 'number' ? lastRoll.speed : lastRoll.speed === 'mr' ? 'Mr Monopoly' : 'Bus'}` : ''}` : '🎲'}</div>
+      <div class="last">${cur ? esc(cur.name) + ': ' : ''}${last ? esc(fmtEvent(last, game)) : 'Waiting for the first roll.'}</div>
+      ${game.result ? `<div class="winner">Winner: ${esc(game.result.winnerName)}</div>` : ''}
+    </div>`;
+}
+
+function matchPanel(game, st) {
+  const m = st.match;
+  const onTable = game.players.filter((p) => !p.bankrupt).reduce((a, p) => a + p.cash, 0);
+  const tiles = [
+    ['Goes', m.turns.toLocaleString()],
+    ['Properties bought', `${m.bought}${m.auctions ? ` (${m.auctions} at auction)` : ''}`],
+    ['Trades', m.trades],
+    ['Cash on the table', money(onTable)],
+    ['Made from the bank', money(m.bankIn)],
+    ['Paid to the bank', money(m.bankOut)],
+    ['Paid between players', money(m.between)],
+    ['Of which rent', money(m.rent)],
+  ];
+  return `<div class="mlogo"><span>MONOPOLY</span></div>
+    <div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`).join('')}</div>
+    <div class="rolls"><div class="k">Rolls · ${m.rollCount} so far${meanRoll(m.rolls) ? ` · mean ${meanRoll(m.rolls).toFixed(2)}` : ''}</div>${rollChart(m.rolls, 220, 64)}</div>`;
+}
+
+function propertyPanel(game, st, i) {
+  const s = game.board[i];
+  const pr = game.props[i] || {};
+  const ps = st.props[i] || { landings: 0, rent: 0, rentBy: {}, ledger: [] };
+  const owner = pr.owner ? game.player(pr.owner) : null;
+  const colour = s.group && GROUPS[s.group] ? GROUPS[s.group].colour : '#444';
+  const deedInk = ['yellow', 'lightblue', 'utility'].includes(s.group) ? '#111' : '#fff';
+  const earners = Object.entries(ps.rentBy).sort((a, b) => b[1] - a[1]).map(([id, amt]) => {
+    const p = game.player(id);
+    return `<li><span class="dot" style="background:${esc(p && p.meta.colour || '#888')}"></span>${esc(p ? p.name : id)} <b>${money(amt)}</b></li>`;
+  }).join('');
+  const ledger = ps.ledger.slice().reverse().map((l) => `<li><span class="r">r${l.round}</span> ${esc(l.text)}</li>`).join('');
+  let state = '';
+  if (pr.level) state = pr.level === SKYSCRAPER ? 'skyscraper' : pr.level === HOTEL ? 'hotel' : `${pr.level} house${pr.level > 1 ? 's' : ''}`;
+  if (pr.depot) state += (state ? ', ' : '') + 'depot';
+  if (pr.mortgaged) state += (state ? ', ' : '') + 'mortgaged';
+  return `<div class="deed" style="--gc:${colour};--deed-ink:${deedInk}">
+    <div class="deed-head">${esc(s.name)}</div>
+    <div class="deed-body">
+      <div class="line"><span>Owner</span><b>${owner ? `<span class="dot" style="background:${esc(owner.meta.colour || '#888')}"></span>${esc(owner.name)}` : 'the bank'}</b></div>
+      <div class="line"><span>Price</span><b>£${s.price}</b>${state ? `<span class="state">${esc(state)}</span>` : ''}</div>
+      <div class="line"><span>Rent generated</span><b>${money(ps.rent)}</b></div>
+      <div class="line"><span>Landed on</span><b>${ps.landings} time${ps.landings === 1 ? '' : 's'}</b></div>
+      ${earners ? `<div class="sub">Earned by</div><ul class="earners">${earners}</ul>` : ''}
+      <div class="sub">Ledger</div>
+      ${ledger ? `<ul class="ledger">${ledger}</ul>` : '<div class="none">Still with the bank.</div>'}
+      <div class="hint">${pinned === i ? 'Click again to release' : 'Click to keep this here'}</div>
+    </div>
   </div>`;
-  board.innerHTML = html;
+}
+
+// A small histogram of roll totals 2–12 with the two-dice expectation drawn over it.
+function rollChart(h, w, hh) {
+  const total = h.reduce((a, b) => a + b, 0);
+  const bw = w / 11;
+  const peak = Math.max(EXPECTED_ROLLS[7], total ? Math.max(...h.slice(2)) / total : 0) || 1;
+  let bars = '', pts = [];
+  for (let t = 2; t <= 12; t++) {
+    const x = (t - 2) * bw;
+    const share = total ? h[t] / total : 0;
+    const bh = (share / peak) * (hh - 14);
+    bars += `<rect x="${(x + 1).toFixed(1)}" y="${(hh - 12 - bh).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${bh.toFixed(1)}" rx="1"><title>${t}: ${h[t]} (${total ? (share * 100).toFixed(1) : 0}%)</title></rect>`;
+    bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${hh - 2}" text-anchor="middle">${t}</text>`;
+    pts.push(`${(x + bw / 2).toFixed(1)},${(hh - 12 - (EXPECTED_ROLLS[t] / peak) * (hh - 14)).toFixed(1)}`);
+  }
+  return `<svg class="rollchart" viewBox="0 0 ${w} ${hh}" width="${w}" height="${hh}" role="img" aria-label="Distribution of roll totals">${bars}<polyline points="${pts.join(' ')}" fill="none"/></svg>`;
 }
 
 function renderPlayerCards(game) {
   const wrap = $('#player-cards');
   const last = game.events[game.events.length - 1];
   const currentId = last ? last.player || last.from : null;
+  const st = statsOf(game);
   wrap.innerHTML = game.players.map((p) => {
-    const props = game.ownedBy(p).map((i) => `<span style="--gc:${esc(GROUPS[game.board[i].group].colour)}" title="${esc(game.board[i].name)}${game.props[i].level ? ' L' + game.props[i].level : ''}${game.props[i].mortgaged ? ' (mortgaged)' : ''}"></span>`).join('');
+    const ps = st.players[p.id] || st.blankPlayer();
+    const props = game.ownedBy(p).map((i) => `<span class="chip" style="--gc:${esc(GROUPS[game.board[i].group].colour)}" title="${esc(game.board[i].name)} · rent earned ${money(ps.made.rent[i] || 0)}${game.props[i].mortgaged ? ' (mortgaged)' : ''}">${esc(game.board[i].name)}${game.props[i].level ? ` <i>${game.props[i].level === SKYSCRAPER ? 'S' : game.props[i].level === HOTEL ? 'H' : game.props[i].level}</i>` : ''}</span>`).join('');
+    const rentRows = Object.entries(ps.made.rent).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([i, amt]) => `<li><span class="sw" style="background:${esc(GROUPS[game.board[i].group].colour)}"></span>${esc(game.board[i].name)}<b>${money(amt)}</b></li>`).join('');
     const lastReason = [...game.llmCalls].reverse().find((c) => c.player === p.id && c.parsed && c.parsed.reason);
     return `<div class="pcard ${p.id === currentId ? 'current' : ''} ${p.bankrupt ? 'bankrupt' : ''}" style="--pc:${esc(p.meta.colour || '#888')}">
-      <div class="n"><span>${esc(p.name)}</span><span>£${p.cash.toLocaleString()}</span></div>
-      <div class="m">${esc(p.meta.provider === 'heuristic' ? 'rule-based bot' : (p.meta.model || p.meta.provider) + (p.meta.effort ? ' @' + p.meta.effort : ''))} · net £${(p.bankrupt ? 0 : game.netWorth(p)).toLocaleString()}${p.inJail ? ' · in jail' : ''}${p.jailCards ? ' · ' + p.jailCards + ' jail card' : ''}${p.busTickets ? ' · ' + p.busTickets + ' bus ticket' : ''}${p.bankrupt ? ' · BANKRUPT' : ''} · ${p.stats.llmCalls} calls</div>
-      <div class="props">${props}</div>
+      <div class="n"><span><span class="dot" style="background:${esc(p.meta.colour || '#888')}"></span>${esc(p.name)}</span><span>${money(p.cash)}</span></div>
+      <div class="m">${esc(p.meta.provider === 'heuristic' ? 'rule-based bot' : (p.meta.model || p.meta.provider) + (p.meta.effort ? ' @' + p.meta.effort : ''))} · net ${money(p.bankrupt ? 0 : game.netWorth(p))}${p.inJail ? ' · in jail' : ''}${p.jailCards ? ' · ' + p.jailCards + ' jail card' : ''}${p.busTickets ? ' · ' + p.busTickets + ' bus ticket' : ''}${p.bankrupt ? ' · BANKRUPT' : ''} · ${p.stats.llmCalls} calls</div>
+      <div class="props">${props || '<span class="none">no properties</span>'}</div>
+      <div class="income">
+        <div class="tot">Made <b>${money(ps.made.total)}</b> · paid <b>${money(ps.paid.total)}</b></div>
+        <ul class="src">
+          <li>Rent<b>${money(ps.made.rentTotal)}</b></li>
+          <li>GO<b>${money(ps.made.go)}</b></li>
+          <li>Bank, other<b>${money(ps.made.bank)}</b></li>
+          <li>Players, other<b>${money(ps.made.players)}</b></li>
+        </ul>
+        ${rentRows ? `<ul class="src per">${rentRows}</ul>` : ''}
+      </div>
+      <div class="rolls"><div class="k">${ps.rollCount} roll${ps.rollCount === 1 ? '' : 's'}${meanRoll(ps.rolls) ? ` · mean ${meanRoll(ps.rolls).toFixed(2)}` : ''}</div>${rollChart(ps.rolls, 160, 48)}</div>
       ${lastReason ? `<div class="reason">“${esc(lastReason.parsed.reason)}”</div>` : ''}
     </div>`;
   }).join('');
 }
+
+// Hover shows a property in the centre; a click keeps it there until clicked again.
+const boardEl = $('#board');
+function cellIndex(ev) { const c = ev.target.closest('.cell.prop'); return c ? Number(c.dataset.i) : null; }
+function markFocus() {
+  const focus = pinned != null ? pinned : hovered;
+  for (const c of boardEl.querySelectorAll('.cell.focus')) if (Number(c.dataset.i) !== focus) c.classList.remove('focus');
+  if (focus != null) { const c = boardEl.querySelector(`.cell[data-i="${focus}"]`); if (c) c.classList.add('focus'); }
+}
+boardEl.addEventListener('mouseover', (ev) => { const i = cellIndex(ev); if (i == null || i === hovered) return; hovered = i; markFocus(); const g = liveGames.get(watched); if (g && pinned == null) renderCentre(g); });
+boardEl.addEventListener('mouseleave', () => { hovered = null; markFocus(); const g = liveGames.get(watched); if (g && pinned == null) renderCentre(g); });
+boardEl.addEventListener('click', (ev) => {
+  const i = cellIndex(ev);
+  if (i == null) { if (ev.target.closest('.centre') && pinned != null) { pinned = null; queueRender(); } return; }
+  pinned = pinned === i ? null : i;
+  queueRender();
+});
 
 function nm(game, id) { const p = game.player(id); return p ? p.name : id; }
 function fmtEvent(e, game) {

@@ -22,6 +22,16 @@ localStorage and each call goes straight from the browser to the provider.
   rule and bank stock limits, mortgages, trades, jail, repairs cards,
   bankruptcies to a player or to the bank (with re-auction), round limit with
   net-worth ranking.
+- **Live view** in Monopoly's own colours and a Kabel-style face: the board
+  fills the window, the centre shows the match (goes, properties bought,
+  trades, cash on the table, money from and to the bank, money between
+  players, the distribution of rolls) with the dice and the last event boxed
+  beneath; hover a property for its owner, the rent it has generated, how
+  often it has been landed on, who earned what from it and its ledger of
+  purchases, trades and mortgages, and click to keep it there. Under the
+  board every player is laid out with their properties, what they have made
+  in total and from rent, GO, the bank and the other players, each property's
+  take, and their own roll distribution.
 - **Providers**: Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek,
   Groq, Together, OpenRouter, Cohere, any OpenAI-compatible endpoint (Ollama,
   vLLM, LM Studio, Azure proxies), plus a free rule-based bot.
@@ -85,7 +95,9 @@ public/
   assets/js/runner.js        batch runner and game record format
   assets/js/store.js         IndexedDB + localStorage persistence
   assets/js/analytics.js     aggregations and SVG charts
+  assets/js/stats.js         live match, player and property statistics from the event log
   assets/js/ui.js            page controller
+  assets/fonts/jost.woff2    Jost (OFL), the Kabel-style face, self-hosted
 scripts/simulate.mjs         headless engine check
 wrangler.jsonc               Cloudflare Workers static-assets config
 ```

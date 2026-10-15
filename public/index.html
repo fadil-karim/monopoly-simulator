@@ -12,7 +12,7 @@
   <header class="top">
     <div class="brand">
       <span class="logo" aria-hidden="true"></span>
-      <h1>Monopoly AI Simulator <small>London edition</small></h1>
+      <h1><span class="plate">MONOPOLY</span> AI Simulator <small>London edition</small></h1>
     </div>
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="setup" role="tab">Setup</button>
@@ -96,17 +96,17 @@
       <div class="play-grid">
         <div class="board-wrap"><div id="board" class="board"></div></div>
         <aside class="side">
-          <div id="player-cards" class="player-cards"></div>
           <div class="feed-head"><h3>Table talk</h3></div>
           <div id="chat" class="feed chat"></div>
           <div class="feed-head"><h3>Events</h3><label class="check small"><input type="checkbox" id="feed-pause"> pause</label></div>
           <div id="events" class="feed"></div>
-          <details open>
+          <details>
             <summary>Model calls</summary>
             <div id="llm-feed" class="feed llm"></div>
           </details>
         </aside>
       </div>
+      <div id="player-cards" class="player-cards"></div>
     </section>
 
     <section id="tab-games" class="panel">
