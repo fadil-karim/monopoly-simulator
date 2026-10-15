@@ -1,0 +1,8 @@
+Done and released as v1.5 on main. The board now wears the colours of the one in your photograph.
+
+I sampled them from the image rather than guessing: the squares and the centre share the same pale green (the centre a shade deeper, as the print is), the rules between the squares are black, the edge is the board's red on a white margin, and the figures, the dice box and the deed card sit on cream cards. The board keeps these colours in the dark theme, where only the page around it changes, and the landings heat board on the statistics page follows the same scheme. Nothing else moved.
+
+Verified before the push: the viewer suite in headless Chromium through every tab, the board rendered light and dark, the replay and engine checks, the dry-run deploy and the rendered pages.
+
+Tag: v1.5  —  Title: The board in its own green, as on the box
+Description: The board now wears the classic board's colours, taken from the owner's photograph: the same pale green across the squares and the centre, black rules between them, a red edge on a white margin, and cream cards for the figures, the dice and the deeds. It looks the same in the dark theme, where only the page around it changes.

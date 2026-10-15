@@ -89,6 +89,13 @@ edition line at the top of the centre, the match or the hovered property's
 deed in the middle, the dice and last event boxed at the bottom, the player
 cards beneath with income by source and property and the roll histogram.
 The palette is Monopoly's with the official group colours; the face is Jost.
+The board itself has fixed colours in both themes, taken from the owner's
+photograph of the classic London board: the squares and the centre in the
+same pale green (`--cell` #c5d9c3, `--board` #bfd7c1), black rules
+(`--board-ink`), a red edge (`--board-edge` #ed2428) on a white margin, and
+cream boxes (`--paper`) for the tiles, the dice box and the deed; inside
+`.board` the theme variables are overridden to those, so dark mode changes
+the page around the board and never the board.
 When there is no game to show (no database, no games yet, a missing id, or
 while loading) `showEmptyBoard` draws the board with every square and the
 logo in the centre, never a blank.
@@ -187,3 +194,4 @@ no new prompt leaves the archive untouched.
 | v1.2 | The board fills the window, in Monopoly's own colours | The live board now fits the window whole, dressed in Monopoly's palette and lettering, with the match in its centre: the goes, purchases, trades, the cash on the table, the money moving to and from the bank and between players, and how the dice have fallen, with the dice and the last event boxed beneath. Hovering any property shows who owns it, what rent it has brought in and to whom, how often it has been landed on and its history of purchases, trades and mortgages, and a click keeps it there; beneath the board every player is laid out with their properties, their takings by source and property, and their own roll distribution. |
 | v1.3 | The table goes public, with a memory | The site is now a viewer for everyone: the games are played from the owner's machine with the owner's keys and streamed in as they happen, every game is kept in a database with its full log, and visitors can watch live, open any past game and step through it, read the narrator's report or hand a transcript to an AI, and compare the board's statistics and every model's record, with each player identified by its provider, exact model and effort. Claude, ChatGPT, Gemini, Grok, Kimi, Mimo, GLM and Mistral have their seats. |
 | v1.4 | The board is always on the table, in any city's names | The board now shows every square whenever there is no game to watch, instead of an empty frame. A selector in the header, with a search box, reads the same board as another edition by position: London, Atlantic City, Paris, the German, Italian and Dutch classics or the 2008 World Edition, and every name and every amount on the page follows, on the squares, in the feeds and deeds, on the player cards and across the statistics, in that edition's currency, without touching the game, even one being watched live. |
+| v1.5 | The board in its own green, as on the box | The board now wears the classic board's colours, taken from the owner's photograph: the same pale green across the squares and the centre, black rules between them, a red edge on a white margin, and cream cards for the figures, the dice and the deeds. It looks the same in the dark theme, where only the page around it changes. |

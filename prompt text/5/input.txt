@@ -1,5 +1,0 @@
-make the board and properties visible while when a game is not being played
-
-also, allwo the user to change the names for different cities and version with a dropdown and search bar. the position are the same so it shouldnt be a problem to change while viewing a game
-
-it should change all respective values and names where required
