@@ -88,13 +88,30 @@ as before: the board sized from its position so it fills the window, the
 edition line at the top of the centre, the match or the hovered property's
 deed in the middle, the dice and last event boxed at the bottom, the player
 cards beneath with income by source and property and the roll histogram.
-A corner square is its own size container (`.cell.corner`,
-`container-type: inline-size`): its label takes its size from the square
-(`cqw` inside it is the corner's width), capped so the longest word (`--w`
-letters, set by `renderBoard`) stays whole, a one-word corner (GO) set
-larger as on the printed board, and a word that still cannot fit breaks
-rather than clips; the fixed `1em` the first releases gave the corners is
-what spilled FREE PARKING and JUST VISITING past their squares.
+The board has the printed board's proportions: `boardTracks` gives the
+corner squares 1.6 times a property's width, so the properties stand tall
+along the top and bottom and lie wide at the sides, and the centre takes
+what is left. Every square (`.cell`, with a side class `side-top`,
+`side-bottom`, `side-left` or `side-right`; never the bare `top`, which is
+the page header's class and once broke the top row) is a flex box with its
+colour band in flow at the inner edge and a `.txt` block holding the name,
+the square's picture, the price and the buildings, all centred, the name
+at the inner edge and the price at the outer one (a top square lists them
+in reverse order so the name still meets the band). A square is its own
+size container and its name is kept to whole words: `renderBoard` measures
+the longest word's width in ems of Jost on a canvas (`wordWidth`, measured
+again once the face has loaded) and sets it as `--w`, and the stylesheet
+gives the name `min(1em, --avail / --w)` with a 5px floor, `--avail` being
+the width the text has on that side; a word that cannot fit even at the
+floor breaks rather than clips. A corner's label is set larger (17.5% of
+the square, a one-word corner such as GO 34%) in the lower part of the
+square, with the tokens above it; GO is red with a black outline and the
+red arrow of the printed board under it, pointing the way round. Chance
+carries its question mark, Community Chest the chest, a station the
+locomotive and the utilities the bulb, the tap and, on the Mega board, the
+flame (`ICONS`: inline SVG, the question mark a styled `?`), between the
+name and the price; the heat board of the statistics page uses the same
+tracks and the same whole-word sizing.
 The palette is Monopoly's with the official group colours; the face is Jost.
 The board itself has fixed colours in both themes, taken from the owner's
 photograph of the classic London board: the squares and the centre in the
@@ -226,3 +243,4 @@ no new prompt leaves the archive untouched.
 | v1.5 | The board in its own green, as on the box | The board now wears the classic board's colours, taken from the owner's photograph: the same pale green across the squares and the centre, black rules between them, a red edge on a white margin, and cream cards for the figures, the dice and the deeds. It looks the same in the dark theme, where only the page around it changes. |
 | v1.6 | One Perplexity key for the seats, a plain dropdown, a fresh stylesheet | ChatGPT, Grok, Kimi and GLM now play through Perplexity's Agent API with a single key, under the ids it serves, while Claude and Gemini stay direct; a runner option prints a provider's current catalogue. The board edition is a plain dropdown in the header. The scripts and the stylesheet moved to new paths so every browser fetches the current ones, after the earliest releases had told browsers to keep the old stylesheet for a year, which is what left the page unstyled. |
 | v1.7 | The corners of the board read whole | The four corner squares, GO, Jail, Free Parking and Go To Jail, no longer spill their words past the edge of the square: each corner's lettering now takes its size from the square itself and from its longest word, in every edition, with GO set larger as it is on the printed board. |
+| v1.8 | The squares take the printed board's shape | The board now has the printed board's proportions, with large corner squares and property boxes that stand tall along the top and bottom and lie wide at the sides, and every name and price is centred in its box with the name kept to whole words, however the window is sized. Chance, Community Chest, the stations and the utilities carry their pictures, and GO is lettered in red with a black outline and the arrow that points the way round the board. |

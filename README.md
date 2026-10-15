@@ -23,8 +23,11 @@ program the owner runs wherever the keys live.
   ledger of purchases, trades and mortgages, and click to keep it there.
   Under the board every player is laid out with their properties, takings by
   source and by property, and their own roll distribution. Table talk, the
-  event feed and the model calls sit beside the board. The board wears the
-  classic board's colours, the same in the dark theme.
+  event feed and the model calls sit beside the board. The board has the
+  printed board's proportions and pictures: large corner squares, tall
+  property boxes, every name whole and centred, Chance's question mark, the
+  chest, the locomotives, the bulb and the tap, GO in red over its arrow,
+  and the classic board's colours, the same in the dark theme.
 - **Games**: every game kept, newest first. Each opens with a replay: step
   back and forth event by event (arrow keys), play at one, four, fifteen or
   sixty events a second or a turn a second, drag the slider to any moment,

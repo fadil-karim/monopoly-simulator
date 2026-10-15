@@ -93,8 +93,10 @@ async function openGame(id, { liveMode }) {
   }
 }
 // The board with every square on it, and nothing on the table.
+let emptyText = '';
 function showEmptyBoard(text) {
   V.game = null;
+  emptyText = text;
   const g = dressGame(new ReplayGame({ edition: 'standard' }), currentSet());
   renderBoard(g);
   const c = $('#centre');
@@ -165,6 +167,8 @@ function queueRender() {
   renderQueued = true;
   requestAnimationFrame(() => { renderQueued = false; fitBoard(); if (V.game) { renderBoard(V.game); renderPlayerCards(V.game); } renderBar(); });
 }
+// Once the face has loaded, the words are measured again and the board drawn again, so the labels are sized to Jost and not to the fallback face.
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { wordWidth.clear(); if (V.game) queueRender(); else if ($('#board .cell')) showEmptyBoard(emptyText); });
 // The board takes the height left under the bars above it, so the whole of it is in view.
 function fitBoard() {
   const wrap = $('.board-wrap');
@@ -295,17 +299,52 @@ function cellPos(i, perSide) {
   if (i <= 3 * perSide) return { row: 1, col: 1 + (i - 2 * perSide) };
   return { row: 1 + (i - 3 * perSide), col: n };
 }
+// The corner squares are 1.6 times a property's width, as on the printed board: the properties stand tall along the top and
+// bottom and lie wide at the sides, and the centre is what is left.
+const CORNER = 1.6;
+const boardTracks = (per) => `${CORNER}fr repeat(${per - 1}, 1fr) ${CORNER}fr`;
+// The squares' pictures: the question mark of Chance, the Community Chest, the locomotive of a station, the bulb, the tap and
+// the flame of the utilities, and the arrow under GO that points the way round the board.
+const ICONS = {
+  chance: '<span class="qm" aria-hidden="true">?</span>',
+  chest: '<svg class="ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 13a13 8 0 0 1 26 0v2H3z" fill="currentColor"/><rect x="3.5" y="15.5" width="25" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="13" y="13" width="6" height="15" fill="currentColor"/><circle cx="16" cy="21" r="1.6" fill="var(--cell)"/></svg>',
+  station: '<svg class="ico" viewBox="0 0 40 28" aria-hidden="true"><g fill="currentColor"><rect x="27" y="3" width="11" height="17" rx="1"/><rect x="6" y="10" width="23" height="10" rx="2"/><rect x="8" y="2" width="5" height="9"/><rect x="17" y="6" width="5" height="5" rx="1"/><rect x="2" y="19" width="36" height="3"/><path d="M2 22L6 14v8z"/><circle cx="11" cy="23.5" r="3.5"/><circle cx="20" cy="23.5" r="3.5"/><circle cx="32" cy="23.5" r="3.5"/></g><rect x="29.5" y="6" width="6" height="5" fill="var(--cell)"/></svg>',
+  utility: [
+    '<svg class="ico" viewBox="0 0 24 32" aria-hidden="true" fill="currentColor"><circle cx="12" cy="10.5" r="8.5"/><path d="M7.5 17h9l-1.2 4.5h-6.6z"/><rect x="8" y="22.5" width="8" height="2.4" rx="1.2"/><rect x="8" y="26" width="8" height="2.4" rx="1.2"/><rect x="9.5" y="29.5" width="5" height="2.2" rx="1.1"/><path d="M8.3 8.2a4.6 4.6 0 0 1 3.4-3.4" fill="none" stroke="var(--cell)" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    '<svg class="ico" viewBox="0 0 32 32" aria-hidden="true" fill="currentColor"><rect x="11" y="2" width="10" height="3.5" rx="1"/><rect x="14.5" y="5" width="3" height="5"/><path d="M5 10h20a3 3 0 0 1 3 3v9h-6v-5H8a3 3 0 0 1-3-3z"/><path d="M28.8 26c0 2-1.5 4-2.5 5.5a1.6 1.6 0 0 1-2.6 0C22.7 30 21.2 28 21.2 26c0-1.5 1.8-3.5 3.8-5.5 2 2 3.8 4 3.8 5.5z"/></svg>',
+    '<svg class="ico" viewBox="0 0 24 32" aria-hidden="true" fill="currentColor"><path d="M12 1.5c.5 6-7 9.5-7 17.5a7 7 0 0 0 14 0c0-4-2.2-6.5-3.5-9-.5 2.5-1.5 3.5-2.5 4 .3-4-.5-8-1-12.5z"/></svg>',
+  ],
+};
+const GO_ARROW = '<svg class="goarrow" viewBox="0 0 100 26" aria-hidden="true"><path d="M98 8H27V2L2 13l25 11v-6h71z" fill="var(--accent)" stroke="var(--board-ink)" stroke-width="2.5" stroke-linejoin="round"/></svg>';
+// The width of a square's longest word in ems of its face (uppercase, with the letter-spacing), measured on a canvas, so the
+// stylesheet can size the label to keep the word whole; measured again once the font has loaded.
+const wordWidth = (() => {
+  const ctx = document.createElement('canvas').getContext('2d');
+  const cache = new Map();
+  const f = (word, weight, spacing) => {
+    const k = `${weight}|${spacing}|${word}`;
+    if (!cache.has(k)) {
+      ctx.font = `${weight} 100px Jost, system-ui, sans-serif`;
+      cache.set(k, (ctx.measureText(word.toUpperCase()).width / 100) * 1.03 + spacing * word.length);
+    }
+    return cache.get(k);
+  };
+  f.clear = () => cache.clear();
+  return f;
+})();
+const longestWord = (name, weight = 600, spacing = 0.01) => Math.max(0.5, ...name.split(/\s+/).filter(Boolean).map((w) => wordWidth(w, weight, spacing))).toFixed(2);
 function renderBoard(game) {
   const board = $('#board');
   const per = game.perSide, n = per + 1;
-  board.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
-  board.style.gridTemplateRows = `repeat(${n}, 1fr)`;
+  board.style.gridTemplateColumns = boardTracks(per);
+  board.style.gridTemplateRows = boardTracks(per);
   const colourOf = {};
   for (const p of game.players) colourOf[p.id] = p.meta.colour || '#888';
   const tokensAt = {};
   for (const p of game.players) if (!p.bankrupt) (tokensAt[p.pos] = tokensAt[p.pos] || []).push(p);
   const focus = pinned != null ? pinned : hovered;
   const M = (n) => (game.fmtMoney ? game.fmtMoney(n) : money(n));
+  const base = makeBoard(game.edition); // the London names, whatever edition the board is read as: they pick a utility's picture
   let html = '';
   for (const s of game.board) {
     const { row, col } = cellPos(s.i, per);
@@ -317,16 +356,22 @@ function renderBoard(game) {
     if (pr && pr.depot) bld += ' DEPOT';
     const toks = (tokensAt[s.i] || []).map((p) => `<span class="tok" style="background:${esc(colourOf[p.id])}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`).join('');
     const side = row === n ? 'bottom' : col === 1 ? 'left' : row === 1 ? 'top' : 'right';
-    // a corner's label is sized by the stylesheet from the square and its longest word (--w), one-word corners (GO) larger
-    const words = corner ? s.name.split(/\s+/).filter(Boolean) : [];
-    const cornerStyle = corner ? `--w:${Math.max(1, ...words.map((w) => w.length))};` : '';
-    html += `<div class="cell ${corner ? 'corner' : ''} ${corner && words.length === 1 ? 'one' : ''} ${side} ${pr && pr.mortgaged ? 'mort' : ''} ${s.price ? 'prop' : ''} ${focus === s.i ? 'focus' : ''} ${pinned === s.i ? 'pinned' : ''}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};${cornerStyle}${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
-      ${s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : ''}
+    // the stylesheet sizes a label from its square and its longest word (--w letters) so the word stays whole; a one-word corner (GO) runs larger
+    const oneWord = !/\s/.test(s.name.trim());
+    const icon = s.type === 'chance' ? ICONS.chance : s.type === 'chest' ? ICONS.chest : s.type === 'station' ? ICONS.station : s.type === 'utility' ? ICONS.utility[/water/i.test(base[s.i].name) ? 1 : /gas/i.test(base[s.i].name) ? 2 : 0] : '';
+    const cls = ['cell', `side-${side}`, corner ? 'corner' : '', corner && oneWord ? 'one' : '', s.i === 0 ? 'go' : '', pr && pr.mortgaged ? 'mort' : '', s.price ? 'prop' : '', focus === s.i ? 'focus' : '', pinned === s.i ? 'pinned' : ''].filter(Boolean).join(' ');
+    const w = longestWord(s.name, s.i === 0 ? 800 : corner ? 700 : 600, s.i === 0 ? 0.04 : 0.01);
+    // the band sits at the inner edge: before the text on the bottom and right sides, after it on the top and left; in a top
+    // square the text runs price, picture, name so the name meets the band and the price the outer edge, as on the others
+    const band = s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : '';
+    const parts = [`<div class="name">${esc(s.name)}</div>`, icon, s.price ? `<div class="price">${esc(M(s.price))}</div>` : '', bld ? `<div class="bld">${bld}</div>` : '', s.i === 0 ? GO_ARROW : ''];
+    const txt = `<div class="txt">${(side === 'top' && !corner ? parts.reverse() : parts).join('')}</div>`;
+    html += `<div class="${cls}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};--w:${w};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
+      ${side === 'bottom' || side === 'right' ? band : ''}
       ${owner ? '<div class="own"></div>' : ''}
       <div class="tokens">${toks}</div>
-      <div class="name">${esc(s.name)}</div>
-      ${s.price ? `<div class="price">${esc(M(s.price))}</div>` : ''}
-      ${bld ? `<div class="bld">${bld}</div>` : ''}
+      ${txt}
+      ${side === 'top' || side === 'left' ? band : ''}
     </div>`;
   }
   html += '<div class="centre" id="centre"></div>';
@@ -499,9 +544,9 @@ function heatBoard(ed, squares, key, label) {
     const v = squares[s.i] ? squares[s.i][key] || 0 : 0;
     const a = v / max;
     const name = nameAt(ed, s.i, s.name);
-    return `<div class="hcell ${s.i % per === 0 ? 'corner' : ''}" style="grid-row:${row};grid-column:${col};--heat:${(a * 0.85).toFixed(3)};color:${a > 0.55 ? '#fff' : 'var(--text)'}" title="${esc(name)}: ${v}"><span class="hn">${esc(name)}</span><span class="hv">${v}</span></div>`;
+    return `<div class="hcell ${s.i % per === 0 ? 'corner' : ''}" style="grid-row:${row};grid-column:${col};--w:${longestWord(name)};--heat:${(a * 0.85).toFixed(3)};color:${a > 0.55 ? '#fff' : 'var(--text)'}" title="${esc(name)}: ${v}"><span class="hn">${esc(name)}</span><span class="hv">${v}</span></div>`;
   }).join('');
-  return `<div class="heat" style="grid-template-columns:repeat(${n},1fr);grid-template-rows:repeat(${n},1fr)">${cells}<div class="hcentre"><div class="mlogo"><span>MONOPOLY</span></div><div class="k">${esc(label)}</div></div></div>`;
+  return `<div class="heat" style="grid-template-columns:${boardTracks(per)};grid-template-rows:${boardTracks(per)}">${cells}<div class="hcentre"><div class="mlogo"><span>MONOPOLY</span></div><div class="k">${esc(label)}</div></div></div>`;
 }
 async function loadStats() {
   const el = $('#stats');
