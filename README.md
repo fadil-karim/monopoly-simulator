@@ -1,105 +1,192 @@
 # Monopoly AI Simulator
 
-A browser-based Monopoly simulator, London edition, where every player is an AI
-model called through its own API. Set up players (provider, model, reasoning
-effort, personal strategy), add universal instructions for everyone, pick the
-standard board or the Mega edition, and run one game or a batch of games in
-parallel. Every game is stored with a complete event log and every model call
-(prompt, reply, latency, token usage) for analytics.
+Eight AI models play Monopoly against each other at one table, and anyone can
+watch. The games are played from the owner's machine with the owner's API
+keys and streamed to this site move by move; every game is kept in a database
+with its full event log and every model call, so visitors can follow the game
+being played, open any past game and step through it, read what happened,
+and compare the board's statistics and every model's record.
 
-Everything runs in the browser. There is no server: API keys stay in
-localStorage and each call goes straight from the browser to the provider.
+The site is a Cloudflare Worker: the viewer in `public/` served as static
+assets, `src/worker.js` for everything under `/api/` (the match history in
+D1, the runner's uploads, the optional narrator), and `runner/run.mjs`, a Node
+program the owner runs wherever the keys live.
 
-## Features
+## What visitors get
 
-- **London edition** board (40 squares, UK street names, pounds, UK Chance and
-  Community Chest cards) and the **Mega edition** (52 squares: Elephant &
-  Castle, Edgware Road, Downing Street, High Holborn, Aldwych, Shaftesbury
-  Avenue, Savile Row, Knightsbridge, Gas Company, Auction, Bus Ticket and
-  Birthday Gift squares, speed die, triples, bus tickets, skyscrapers, train
-  depots, majority-rule building, £2,500 starting cash).
-- Full rules: auctions (sealed-bid), building and selling with the even-build
-  rule and bank stock limits, mortgages, trades, jail, repairs cards,
-  bankruptcies to a player or to the bank (with re-auction), round limit with
-  net-worth ranking.
-- **Live view** in Monopoly's own colours and a Kabel-style face: the board
-  fills the window, the centre shows the match (goes, properties bought,
-  trades, cash on the table, money from and to the bank, money between
-  players, the distribution of rolls) with the dice and the last event boxed
-  beneath; hover a property for its owner, the rent it has generated, how
-  often it has been landed on, who earned what from it and its ledger of
-  purchases, trades and mortgages, and click to keep it there. Under the
-  board every player is laid out with their properties, what they have made
-  in total and from rent, GO, the bank and the other players, each property's
-  take, and their own roll distribution.
-- **Providers**: Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek,
-  Groq, Together, OpenRouter, Cohere, any OpenAI-compatible endpoint (Ollama,
-  vLLM, LM Studio, Azure proxies), plus a free rule-based bot.
-- **Effort** per player (none → max) mapped to each provider's reasoning knob:
-  `output_config.effort` for Claude, `reasoning_effort` for OpenAI / Groq /
-  xAI, thinking budgets for Gemini, `reasoning.effort` for OpenRouter. If a
-  model rejects the parameter the call is retried without it.
-- Per-player and universal **strategy instructions** injected into the system
-  prompt.
-- **Table talk**: every reply can carry a public remark or a private word to
-  one opponent, a player who is addressed gets to answer, trade proposals are
-  negotiated with counter-offers until someone accepts or walks away, and the
-  recent conversation is shown to each model with the game state. Nothing is
-  rationed: players act before every roll, choose their own liquidations and
-  may propose as many trades as they like; games run until one player is left
-  unless you set a round limit.
-- Fast where it costs nothing: sealed bids are gathered in parallel, games run
-  concurrently, Anthropic calls use prompt caching, and any failed or malformed
-  reply falls back instantly to the rule-based heuristics so a game never
-  stalls.
-- **Logs**: each game record holds config, seating, every event (dice, moves,
-  rent, cards, builds, trades, bankruptcies), per-round net-worth snapshots and
-  every model call. Export one game, all games as JSON or JSONL, or a per-player
-  summary CSV. The Analytics tab aggregates win rate, average rank, net worth,
-  latency, tokens, fallback and illegal-decision rates per player/model.
+- **Live**: the game being played now, following along as events arrive, or
+  the latest game when the table is quiet. The board fills the window; its
+  centre carries the match (goes, purchases, trades, cash on the table, money
+  to and from the bank and between players, how the dice have fallen) with
+  the dice and the last event boxed beneath; hover a property for its owner,
+  the rent it has generated and to whom, how often it was landed on and its
+  ledger of purchases, trades and mortgages, and click to keep it there.
+  Under the board every player is laid out with their properties, takings by
+  source and by property, and their own roll distribution. Table talk, the
+  event feed and the model calls sit beside the board.
+- **Games**: every game kept, newest first. Each opens with a replay: step
+  back and forth event by event (arrow keys), play at one, four, fifteen or
+  sixty events a second or a turn a second, drag the slider to any moment,
+  or jump to the end.
+- **What happened**, under every game: the narrator's match report when the
+  runner wrote one, a transcript of the whole game as plain text for pasting
+  into any AI assistant (full or short), the full log as JSON, and, when the
+  owner switches the narrator on, a box to ask the game questions.
+- **Monopoly stats**: the board across all finished games: game length, goes,
+  trades, auctions, bankruptcies, buildings, rent and money flows a game, how
+  the dice fell against the two-dice expectation, a heat board of where the
+  tokens land, the most landed-on squares, rent by square and by colour
+  group, and a table of every property.
+- **Model stats**: every model's record: games, wins, win rate, average rank
+  and net worth, bankruptcies and when, rent in and out, purchases, auctions,
+  trades, buildings, jail, table talk, calls a game, fallbacks, illegal
+  decisions, latency, tokens per call and its own dice. A model is identified
+  by provider, exact model id and effort, and by the model id the API itself
+  reported back.
+
+## The players
+
+The example configuration seats Claude (Anthropic), ChatGPT (OpenAI), Gemini
+(Google), Grok (xAI), Kimi (Moonshot), Mimo (Xiaomi), GLM (Z.ai) and Mistral.
+Each player is a provider, a model id, an effort setting and optional
+instructions; the runner also records the model id each API reports back on
+every call. Providers available: Anthropic, OpenAI, Google Gemini, xAI,
+Mistral, DeepSeek, Groq, Together, OpenRouter, Cohere, Moonshot, Z.ai,
+Xiaomi, any OpenAI-compatible endpoint, and a free rule-based bot. Effort
+maps to each provider's reasoning knob (`output_config.effort` for Claude,
+`reasoning_effort` for OpenAI, xAI and Groq, thinking budgets for Gemini,
+`thinking` on and off for GLM, `reasoning.effort` on OpenRouter); a provider
+that rejects a knob gets the call again without it. Any call that fails or
+returns no usable JSON falls back to the rule-based player for that one
+decision and is counted as a fallback.
+
+## Setting up the site
+
+1. Deploy once (pushing to `main` deploys through Workers Builds). Without a
+   database every data route answers 503 and the viewer says so.
+2. Create the database and bind it:
+   ```bash
+   npx wrangler d1 create monopoly-ai
+   ```
+   paste the id it prints into the `d1_databases` block in `wrangler.jsonc`,
+   uncomment the block, then apply the schema:
+   ```bash
+   npm run migrate        # wrangler d1 migrations apply DB --remote
+   ```
+   and push: the deploy now carries the binding.
+3. Give the runner its token, a long random string of your choosing:
+   ```bash
+   npx wrangler secret put RUNNER_TOKEN
+   ```
+4. Optional narrator, for the "ask the game" box: `npx wrangler secret put
+   NARRATOR_API_KEY`, and `NARRATOR_PROVIDER`, `NARRATOR_MODEL`,
+   `NARRATOR_EFFORT`, `NARRATOR_BASE` as vars or secrets (defaults: Anthropic,
+   `claude-sonnet-5-5`, low). `ASK_LIMIT` caps questions per address per hour
+   (20). The transcript is trimmed to `ASK_MAX_CHARS` (120,000).
+
+## Running the games
+
+On the machine that holds the keys:
+
+```bash
+cp runner/config.example.json runner/config.json   # edit site, players, models, efforts
+cat > runner/.env <<'ENV'
+SITE=https://monopoly-simulator.YOUR-ACCOUNT.workers.dev
+RUNNER_TOKEN=the same string as the secret
+ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+XAI_API_KEY=...
+MOONSHOT_API_KEY=...
+XIAOMI_API_KEY=...
+ZAI_API_KEY=...
+MISTRAL_API_KEY=...
+ENV
+node runner/run.mjs --loop
+```
+
+`--loop` plays a batch of `games` from the config, pauses
+`pauseBetweenGamesMs`, and starts the next; `--games`, `--concurrency`,
+`--seed`, `--edition`, `--max-rounds`, `--delay` (a pause before every turn)
+and `--dry` (play without uploading) override the config. Every game is also
+written to `runner/out/<id>.json`. A player whose key is missing plays as the
+rule-based bot and says so at start. With `"narrator"` in the config the
+runner writes the match report at the end of each game with that model. Stop
+with Ctrl-C: the uploads finish and running games are marked aborted.
+
+Prompts are not stored unless `"logPrompts": true` (or `--log-prompts`); the
+reply, the parsed decision, latency and tokens always are.
+
+## The API
+
+Public, read-only, JSON unless noted:
+
+- `GET /api/live`: the games running now and the latest finished one.
+- `GET /api/games?limit=50&offset=0&status=finished`: the list, newest first.
+- `GET /api/games/<id>`: the game with its players, result, summary and recap.
+- `GET /api/games/<id>/events?after=0&limit=1000`: the event log, paged by
+  sequence number (poll with `after` to follow a running game).
+- `GET /api/games/<id>/calls?after=0&limit=500&full=1`: the model calls;
+  `full=1` adds the reply text and, when logged, the prompts.
+- `GET /api/games/<id>/transcript?compact=1`: the game as plain text.
+- `GET /api/games/<id>/export?full=1`: everything as one JSON file.
+- `GET /api/stats/monopoly`, `GET /api/stats/models`: the aggregates.
+- `POST /api/games/<id>/ask` `{ "question": "..." }`: the narrator, when on.
+
+The runner's routes under `/api/ingest/` take `Authorization: Bearer
+<RUNNER_TOKEN>`: `POST games`, `POST games/<id>/events`, `POST
+games/<id>/calls`, `POST games/<id>/finish`, `POST games/<id>/abort`,
+`DELETE games/<id>`.
 
 ## Running it locally
 
 ```bash
 npm install
-npm run dev          # wrangler dev, serves public/
+npm run migrate:local      # the schema into a simulated local database
+npm run dev                # wrangler dev --env local, with RUNNER_TOKEN=local-dev-token
+node runner/run.mjs --config runner/config.bots.json --token local-dev-token --games 2
 ```
 
-Any static file server works too (the site is plain HTML, CSS and ES modules).
-`npm run simulate` runs headless rule-based games in Node to check the engine.
+then open http://127.0.0.1:8789 (or whatever port wrangler prints).
 
-## Browser access to provider APIs (CORS)
+## Checks
 
-Calls are made from the page, so the provider must allow browser requests.
-Anthropic (with the direct-browser-access header), OpenAI, Gemini, Groq,
-OpenRouter, Mistral and xAI do. If a provider refuses, the "Fetch models"
-button on the Setup tab shows the error; route that model through OpenRouter or
-a local OpenAI-compatible proxy instead. Players whose calls fail fall back to
-the rule-based bot and the fallback is recorded in the log.
-
-Use a dedicated, spend-limited API key: it lives in this browser only, but it
-is still a key in a web page.
+```bash
+npm run simulate           # bot games: invariants and the illegal-action count
+npm run check:replay       # the replay reducer against the engine, every event
+npm run check              # wrangler deploy --dry-run
+node scripts/verify-viewer.mjs   # the viewer in headless Chromium against the local Worker
+```
 
 ## Project layout
 
 ```
 public/
-  index.html                 the app
+  index.html                 the viewer: live, games, replay, Monopoly stats, model stats, about
   404.html                   themed not-found page
   assets/css/site.css
+  assets/js/viewer.js        the viewer controller
+  assets/js/replay.js        rebuilds a game's state from its event log (checked against the engine)
+  assets/js/stats.js         live match, player and property statistics from the event log
+  assets/js/transcript.js    one line per event; the plain-text transcript
+  assets/js/analytics.js     SVG bar chart
   assets/js/board.js         boards, groups, cards
-  assets/js/engine.js        game rules and event log
+  assets/js/engine.js        game rules and event log (shared with the runner)
   assets/js/heuristics.js    rule-based decisions and fallbacks
   assets/js/providers.js     provider adapters and effort mapping
   assets/js/ai.js            prompts, JSON parsing, model-call records
-  assets/js/runner.js        batch runner and game record format
-  assets/js/store.js         IndexedDB + localStorage persistence
-  assets/js/analytics.js     aggregations and SVG charts
-  assets/js/stats.js         live match, player and property statistics from the event log
-  assets/js/ui.js            page controller
+  assets/js/runner.js        batch runner used by runner/run.mjs
   assets/fonts/jost.woff2    Jost (OFL), the Kabel-style face, self-hosted
+src/worker.js                the Worker: /api/* over D1, assets for the rest
+src/aggregate.js             the statistics aggregations
+migrations/0001_init.sql     the schema
+runner/run.mjs               plays games and streams them to the site
+runner/config.example.json   the eight players
+runner/config.bots.json      rule-based players, for local tests
 scripts/simulate.mjs         headless engine check
-wrangler.jsonc               Cloudflare Workers static-assets config
+scripts/check-replay.mjs     the replay reducer against the engine
+scripts/verify-viewer.mjs    the viewer in headless Chromium
+wrangler.jsonc               Worker + assets + (once created) the D1 binding
 ```
 
 ## Rule notes
@@ -119,5 +206,7 @@ wrangler.jsonc               Cloudflare Workers static-assets config
 
 ## Deployment
 
-The repository is deployed by Cloudflare Workers Builds: every push to `main`
-is a production release. `npx wrangler deploy --dry-run` validates the config.
+Pushing to `main` deploys through Cloudflare Workers Builds. `wrangler.jsonc`
+carries the Worker, the assets and, once the owner has created it, the D1
+binding; the runner token and any narrator key are Worker secrets, never in
+the repository.

@@ -1,15 +1,41 @@
 {
-  // Assets-only Worker: no script, Cloudflare serves public/ directly.
-  // https://developers.cloudflare.com/workers/static-assets/
+  // The site: the viewer in public/ served as static assets, and src/worker.js
+  // for everything under /api/ (the match history in D1, the runner's uploads,
+  // the narrator). https://developers.cloudflare.com/workers/static-assets/
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "monopoly-simulator",
+  "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./public",
+    "binding": "ASSETS",
     // Serve the themed 404 for unknown paths instead of a bare Cloudflare error.
-    "not_found_handling": "404-page"
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
   },
   "observability": {
     "enabled": true
+  },
+  // The database. Create it once in the account, paste its id, uncomment, and
+  // apply the migrations - see README "Setting up the database". Until then the
+  // deploy still succeeds and every data route answers 503.
+  //
+  //   npx wrangler d1 create monopoly-ai
+  //   npx wrangler d1 migrations apply DB --remote
+  //   npx wrangler secret put RUNNER_TOKEN
+  //
+  // "d1_databases": [
+  //   { "binding": "DB", "database_name": "monopoly-ai", "database_id": "<paste the id here>", "migrations_dir": "migrations" }
+  // ],
+  // Local development and the test suite use this environment with a simulated database:
+  //   npx wrangler d1 migrations apply DB --local --env local
+  //   npx wrangler dev --env local
+  "env": {
+    "local": {
+      "vars": { "RUNNER_TOKEN": "local-dev-token" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "monopoly-ai", "database_id": "local", "migrations_dir": "migrations" }
+      ]
+    }
   }
 }

@@ -1,72 +1,92 @@
-// Provider adapters. Every call goes straight from the browser to the provider's
-// API with the user's own key (stored only in this browser's localStorage).
-// Each adapter returns { text, usage, latencyMs, raw, request } or throws.
+// Provider adapters. Every call goes straight to the provider's API with the
+// caller's own key: from the runner on the owner's machine, or from the Worker
+// for the narrator. Each adapter returns { text, usage, latencyMs, raw, request,
+// servedModel } or throws. `env` names the environment variable the runner
+// reads the key from.
 
 export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export const PROVIDERS = {
   anthropic: {
-    label: 'Anthropic (Claude)', kind: 'anthropic', base: 'https://api.anthropic.com',
+    label: 'Anthropic (Claude)', kind: 'anthropic', base: 'https://api.anthropic.com', env: 'ANTHROPIC_API_KEY',
     models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
     effortNote: 'Maps to output_config.effort (low … max). Thinking is adaptive on Claude 5 models.',
     keyUrl: 'https://console.anthropic.com/settings/keys',
   },
   openai: {
-    label: 'OpenAI', kind: 'openai', base: 'https://api.openai.com/v1',
+    label: 'OpenAI', kind: 'openai', base: 'https://api.openai.com/v1', env: 'OPENAI_API_KEY',
     models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'o3', 'o4-mini'],
     effortNote: 'Maps to reasoning_effort on reasoning models; ignored by non-reasoning models.',
     keyUrl: 'https://platform.openai.com/api-keys',
   },
   google: {
-    label: 'Google (Gemini)', kind: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta',
+    label: 'Google (Gemini)', kind: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta', env: 'GEMINI_API_KEY',
     models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
     effortNote: 'Maps to a thinking budget (thinkingLevel on Gemini 3).',
     keyUrl: 'https://aistudio.google.com/apikey',
   },
   xai: {
-    label: 'xAI (Grok)', kind: 'openai', base: 'https://api.x.ai/v1',
+    label: 'xAI (Grok)', kind: 'openai', base: 'https://api.x.ai/v1', env: 'XAI_API_KEY',
     models: ['grok-4', 'grok-4-fast', 'grok-3', 'grok-3-mini'],
     effortNote: 'Maps to reasoning_effort low/high where the model supports it.',
     keyUrl: 'https://console.x.ai/',
   },
   mistral: {
-    label: 'Mistral', kind: 'openai', base: 'https://api.mistral.ai/v1',
+    label: 'Mistral', kind: 'openai', base: 'https://api.mistral.ai/v1', env: 'MISTRAL_API_KEY',
     models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest', 'magistral-medium-latest', 'magistral-small-latest'],
     effortNote: 'No effort parameter; magistral models reason by default.',
     keyUrl: 'https://console.mistral.ai/api-keys',
   },
   deepseek: {
-    label: 'DeepSeek', kind: 'openai', base: 'https://api.deepseek.com/v1',
+    label: 'DeepSeek', kind: 'openai', base: 'https://api.deepseek.com/v1', env: 'DEEPSEEK_API_KEY',
     models: ['deepseek-chat', 'deepseek-reasoner'],
     effortNote: 'No effort parameter; deepseek-reasoner always reasons.',
     keyUrl: 'https://platform.deepseek.com/api_keys',
   },
   groq: {
-    label: 'Groq', kind: 'openai', base: 'https://api.groq.com/openai/v1',
+    label: 'Groq', kind: 'openai', base: 'https://api.groq.com/openai/v1', env: 'GROQ_API_KEY',
     models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile', 'moonshotai/kimi-k2-instruct', 'qwen/qwen3-32b'],
     effortNote: 'Maps to reasoning_effort on gpt-oss and qwen models.',
     keyUrl: 'https://console.groq.com/keys',
   },
   together: {
-    label: 'Together AI', kind: 'openai', base: 'https://api.together.xyz/v1',
+    label: 'Together AI', kind: 'openai', base: 'https://api.together.xyz/v1', env: 'TOGETHER_API_KEY',
     models: ['meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen3-235B-A22B-fp8-tput'],
     effortNote: 'No effort parameter.',
     keyUrl: 'https://api.together.ai/settings/api-keys',
   },
   openrouter: {
-    label: 'OpenRouter (any model)', kind: 'openai', base: 'https://openrouter.ai/api/v1', reasoning: 'openrouter',
+    label: 'OpenRouter (any model)', kind: 'openai', base: 'https://openrouter.ai/api/v1', reasoning: 'openrouter', env: 'OPENROUTER_API_KEY',
     models: ['anthropic/claude-sonnet-4.5', 'openai/gpt-5', 'google/gemini-2.5-pro', 'x-ai/grok-4', 'meta-llama/llama-4-maverick', 'deepseek/deepseek-r1', 'qwen/qwen3-235b-a22b'],
     effortNote: 'Maps to the unified reasoning.effort parameter.',
     keyUrl: 'https://openrouter.ai/keys',
   },
   cohere: {
-    label: 'Cohere', kind: 'openai', base: 'https://api.cohere.ai/compatibility/v1',
+    label: 'Cohere', kind: 'openai', base: 'https://api.cohere.ai/compatibility/v1', env: 'COHERE_API_KEY',
     models: ['command-a-03-2025', 'command-r-plus-08-2024', 'command-r7b-12-2024'],
     effortNote: 'No effort parameter.',
     keyUrl: 'https://dashboard.cohere.com/api-keys',
   },
+  moonshot: {
+    label: 'Moonshot (Kimi)', kind: 'openai', base: 'https://api.moonshot.ai/v1', env: 'MOONSHOT_API_KEY',
+    models: ['kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-0905-preview', 'kimi-k2-turbo-preview'],
+    effortNote: 'No effort parameter; the thinking models reason by default. China-mainland keys use api.moonshot.cn.',
+    keyUrl: 'https://platform.moonshot.ai/console/api-keys',
+  },
+  zhipu: {
+    label: 'Z.ai (GLM)', kind: 'openai', base: 'https://api.z.ai/api/paas/v4', env: 'ZAI_API_KEY',
+    models: ['glm-5', 'glm-4.7', 'glm-4.6'],
+    effortNote: 'Thinking is on by default; effort "none" turns it off. China-mainland keys use open.bigmodel.cn.',
+    keyUrl: 'https://z.ai/manage-apikey/apikey-list',
+  },
+  xiaomi: {
+    label: 'Xiaomi (MiMo)', kind: 'openai', base: 'https://api.xiaomimimo.com/v1', env: 'XIAOMI_API_KEY',
+    models: ['mimo-v2-flash'],
+    effortNote: 'No effort parameter.',
+    keyUrl: 'https://platform.xiaomimimo.com/',
+  },
   custom: {
-    label: 'Custom OpenAI-compatible endpoint', kind: 'openai', base: 'http://localhost:11434/v1',
+    label: 'Custom OpenAI-compatible endpoint', kind: 'openai', base: 'http://localhost:11434/v1', env: 'CUSTOM_API_KEY',
     models: ['llama3.1', 'qwen3', 'gpt-oss:20b'],
     effortNote: 'Sends reasoning_effort; stripped automatically if the server rejects it.',
     keyUrl: '',
@@ -212,8 +232,8 @@ async function callAnthropic(o, provider) {
     'content-type': 'application/json',
     'x-api-key': o.apiKey,
     'anthropic-version': '2023-06-01',
-    'anthropic-dangerous-direct-browser-access': 'true',
   };
+  if (typeof window !== 'undefined') headers['anthropic-dangerous-direct-browser-access'] = 'true';
   const send = async (b) => {
     const r = await fetchJson(`${base}/v1/messages`, { method: 'POST', headers, body: JSON.stringify(b) }, o.timeoutMs || 60000, o.signal);
     if (!r.ok) throw new ProviderError(`Anthropic ${r.status}: ${(r.json && r.json.error && r.json.error.message) || r.text.slice(0, 300)}`, r.status, r.json);
@@ -235,7 +255,7 @@ async function callAnthropic(o, provider) {
   const text = (json.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
   const u = json.usage || {};
   return {
-    text, raw: json, request,
+    text, raw: json, request, servedModel: json.model || null,
     usage: { input: u.input_tokens || 0, output: u.output_tokens || 0, cached: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0, reasoning: null },
     stopReason: json.stop_reason,
   };
@@ -244,7 +264,8 @@ async function callAnthropic(o, provider) {
 async function callGemini(o, provider) {
   const base = (o.baseUrl || provider.base).replace(/\/$/, '');
   const url = `${base}/models/${encodeURIComponent(o.model)}:generateContent`;
-  const generationConfig = { maxOutputTokens: (o.maxTokens || 1500) + headroom(o.effort), responseMimeType: 'application/json' };
+  const generationConfig = { maxOutputTokens: (o.maxTokens || 1500) + headroom(o.effort) };
+  if (!o.plain) generationConfig.responseMimeType = 'application/json';
   if (o.temperature != null) generationConfig.temperature = o.temperature;
   const eff = mapEffort('google', o.effort);
   if (eff) {
@@ -276,7 +297,7 @@ async function callGemini(o, provider) {
   const text = cand && cand.content && cand.content.parts ? cand.content.parts.filter((p) => !p.thought).map((p) => p.text || '').join('') : '';
   const u = json.usageMetadata || {};
   return {
-    text, raw: json, request,
+    text, raw: json, request, servedModel: json.modelVersion || null,
     usage: { input: u.promptTokenCount || 0, output: u.candidatesTokenCount || 0, cached: u.cachedContentTokenCount || 0, reasoning: u.thoughtsTokenCount || 0 },
     stopReason: cand ? cand.finishReason : null,
   };
@@ -300,7 +321,8 @@ async function callOpenAICompat(o, provider) {
     else optional.reasoning_effort = eff;
   }
   if (o.temperature != null) optional.temperature = o.temperature;
-  if (o.provider !== 'together' && o.provider !== 'cohere' && o.provider !== 'custom') optional.response_format = { type: 'json_object' };
+  if (!o.plain && o.provider !== 'together' && o.provider !== 'cohere' && o.provider !== 'custom') optional.response_format = { type: 'json_object' };
+  if (o.provider === 'zhipu' && o.effort) optional.thinking = { type: o.effort === 'none' ? 'disabled' : 'enabled' };
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey || 'none'}` };
   if (o.provider === 'openrouter') { headers['HTTP-Referer'] = typeof location !== 'undefined' ? location.origin : 'https://monopoly-simulator'; headers['X-Title'] = 'Monopoly AI Simulator'; }
   const send = async (b) => {
@@ -323,7 +345,7 @@ async function callOpenAICompat(o, provider) {
   if (!text && msg.reasoning_content && /\{/.test(msg.reasoning_content)) text = msg.reasoning_content; // some servers put the answer here when truncated
   const u = json.usage || {};
   return {
-    text, raw: json, request,
+    text, raw: json, request, servedModel: json.model || null,
     usage: {
       input: u.prompt_tokens || 0, output: u.completion_tokens || 0,
       cached: (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) || 0,

@@ -177,6 +177,7 @@ export class AIDecider {
       rec.latencyMs = out.latencyMs;
       rec.usage = out.usage;
       rec.stopReason = out.stopReason;
+      rec.servedModel = out.servedModel || null;
       rec.response = out.text;
       const parsed = parseJsonReply(out.text);
       rec.parsed = parsed;

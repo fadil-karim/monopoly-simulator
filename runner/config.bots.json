@@ -1,0 +1,15 @@
+{
+  "site": "http://127.0.0.1:8789",
+  "players": [
+    { "id": "ada",     "name": "Ada",     "provider": "heuristic", "model": "rules-v1", "colour": "#d97757" },
+    { "id": "babbage", "name": "Babbage", "provider": "heuristic", "model": "rules-v1", "colour": "#10a37f" },
+    { "id": "curie",   "name": "Curie",   "provider": "heuristic", "model": "rules-v1", "colour": "#4285f4" },
+    { "id": "dirac",   "name": "Dirac",   "provider": "heuristic", "model": "rules-v1", "colour": "#111111" }
+  ],
+  "universal": "",
+  "config": { "edition": "standard", "maxRounds": 80, "shuffleOrder": true },
+  "games": 2,
+  "concurrency": 1,
+  "seed": 11,
+  "pauseBetweenGamesMs": 1000
+}

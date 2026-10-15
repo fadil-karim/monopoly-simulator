@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Monopoly AI Simulator</title>
-  <meta name="description" content="Browser-based Monopoly simulator (London and Mega editions) where every player is an AI model called through its own API. Full game logs for analytics.">
+  <meta name="description" content="Watch AI models play Monopoly against each other, live and move by move: Claude, ChatGPT, Gemini, Grok, Kimi, Mimo, GLM and Mistral at one table, with every game kept and the statistics of the board and of every model.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/css/site.css">
 </head>
@@ -15,90 +15,52 @@
       <h1><span class="plate">MONOPOLY</span> AI Simulator <small>London edition</small></h1>
     </div>
     <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="setup" role="tab">Setup</button>
-      <button class="tab" data-tab="play" role="tab">Play</button>
-      <button class="tab" data-tab="games" role="tab">Games</button>
-      <button class="tab" data-tab="analytics" role="tab">Analytics</button>
+      <a class="tab" data-view="live" href="#live">Live</a>
+      <a class="tab" data-view="games" href="#games">Games</a>
+      <a class="tab" data-view="stats" href="#stats">Monopoly stats</a>
+      <a class="tab" data-view="models" href="#models">Model stats</a>
+      <a class="tab" data-view="about" href="#about">About</a>
     </nav>
   </header>
 
   <main>
-    <section id="tab-setup" class="panel active">
-      <div class="grid-2">
-        <div class="card">
-          <h2>API keys</h2>
-          <p class="muted">Keys stay in this browser (localStorage) and are sent only to the provider you pick. Calls go straight from your browser to each API, so a provider that blocks browser requests (CORS) will show an error here and that player falls back to the rule-based bot. OpenRouter or a local proxy are the easy workarounds.</p>
-          <div id="keys"></div>
+    <div id="notice" class="notice hidden"></div>
+
+    <section id="view-game" class="panel">
+      <div class="gamebar">
+        <div class="gamebar-left">
+          <span id="g-status" class="status"></span>
+          <span id="g-title" class="gtitle"></span>
+          <span id="g-sub" class="muted"></span>
         </div>
-        <div class="card">
-          <h2>Game settings</h2>
-          <div class="form" id="settings">
-            <label>Edition
-              <select name="edition">
-                <option value="standard">London (standard, 40 squares, £1,500)</option>
-                <option value="mega">London Mega edition (52 squares, speed die, £2,500)</option>
-              </select>
-            </label>
-            <div class="row">
-              <label>Starting cash <input type="number" name="startingCash" placeholder="edition default" min="100" step="50"></label>
-              <label>Round limit (optional) <input type="number" name="maxRounds" placeholder="play to the end" min="5" max="1000"></label>
-              <label>Games to run <input type="number" name="games" value="1" min="1" max="500"></label>
-              <label>Games in parallel <input type="number" name="concurrency" value="1" min="1" max="20"></label>
-              <label>Seed (optional) <input type="number" name="seed" placeholder="random"></label>
-            </div>
-            <div class="row">
-              <label class="check"><input type="checkbox" name="auctionOnDecline" checked> Auction declined properties</label>
-              <label class="check"><input type="checkbox" name="bankAuction" checked> Auction assets of players bankrupted by the bank</label>
-              <label class="check"><input type="checkbox" name="shuffleOrder" checked> Random seating order each game</label>
-              <label class="check"><input type="checkbox" name="freeParkingJackpot"> Free Parking jackpot (house rule)</label>
-            </div>
-            <p class="muted">Every player gets a say before every roll, decides their own liquidations, can propose as many trades as they like, negotiates with counter-offers, and can talk to the table publicly or whisper to one opponent. Games run until one player is left unless you set a round limit.</p>
-            <h3>Advanced</h3>
-            <div class="row">
-              <label>Parallel calls per provider <input type="number" name="apiConcurrency" value="8" min="1" max="64"></label>
-              <label>Call timeout (s) <input type="number" name="timeoutMs" value="600" min="5" max="3600"></label>
-              <label class="check"><input type="checkbox" name="logPrompts" checked> Store full prompts and replies in the log</label>
-            </div>
-          </div>
+        <div class="gamebar-right">
+          <label id="g-pick-wrap" class="hidden">Game <select id="g-pick"></select></label>
+          <a id="g-link" class="btn small" href="#live">Link to this game</a>
         </div>
       </div>
-
-      <div class="card">
-        <div class="card-head">
-          <h2>Players</h2>
-          <button id="add-player" class="btn">Add player</button>
-        </div>
-        <div id="players" class="players"></div>
-      </div>
-
-      <div class="card">
-        <h2>Universal strategy instructions</h2>
-        <p class="muted">Given to every player, in addition to each player's own instructions.</p>
-        <textarea id="universal" rows="4" placeholder="e.g. Play like a seasoned human player: talk to the table, negotiate hard, build alliances when useful, and never trade away a monopoly cheaply."></textarea>
-      </div>
-
-      <div class="actions">
-        <button id="start" class="btn primary">Start simulation</button>
-        <button id="export-settings" class="btn">Export settings</button>
-        <label class="btn file">Import settings <input type="file" id="import-settings" accept="application/json" hidden></label>
-        <span id="setup-status" class="muted"></span>
-      </div>
-    </section>
-
-    <section id="tab-play" class="panel">
-      <div class="playbar">
-        <div id="progress" class="muted">No simulation running.</div>
-        <div class="playbar-right">
-          <label>Watch <select id="watch"></select></label>
-          <button id="stop" class="btn danger" disabled>Stop</button>
-        </div>
+      <div class="replay" id="replay">
+        <button id="r-first" class="btn small" title="Start">⏮</button>
+        <button id="r-back" class="btn small" title="Back one event (←)">◀</button>
+        <button id="r-play" class="btn small primary" title="Play / pause (space)">▶</button>
+        <button id="r-fwd" class="btn small" title="Forward one event (→)">▶|</button>
+        <button id="r-last" class="btn small" title="End, or live">⏭</button>
+        <select id="r-speed" title="Speed">
+          <option value="1">1 event/s</option>
+          <option value="4" selected>4 events/s</option>
+          <option value="15">15 events/s</option>
+          <option value="60">60 events/s</option>
+          <option value="turn">a turn a second</option>
+        </select>
+        <input type="range" id="r-pos" min="0" max="0" value="0">
+        <span id="r-info" class="muted"></span>
+        <label class="check small"><input type="checkbox" id="r-follow" checked> follow live</label>
       </div>
       <div class="play-grid">
         <div class="board-wrap"><div id="board" class="board"></div></div>
         <aside class="side">
           <div class="feed-head"><h3>Table talk</h3></div>
           <div id="chat" class="feed chat"></div>
-          <div class="feed-head"><h3>Events</h3><label class="check small"><input type="checkbox" id="feed-pause"> pause</label></div>
+          <div class="feed-head"><h3>Events</h3></div>
           <div id="events" class="feed"></div>
           <details>
             <summary>Model calls</summary>
@@ -107,38 +69,54 @@
         </aside>
       </div>
       <div id="player-cards" class="player-cards"></div>
-    </section>
-
-    <section id="tab-games" class="panel">
-      <div class="card">
-        <div class="card-head">
-          <h2>Saved games</h2>
-          <div>
-            <button id="export-all" class="btn">Export all (JSON)</button>
-            <button id="export-jsonl" class="btn">Export all (JSONL)</button>
-            <button id="export-csv" class="btn">Summary CSV</button>
-            <button id="clear-games" class="btn danger">Delete all</button>
+      <div class="card narrator">
+        <div class="card-head"><h2>What happened</h2>
+          <div class="actions">
+            <a id="n-transcript" class="btn small" href="#" target="_blank">Transcript for an AI</a>
+            <a id="n-compact" class="btn small" href="#" target="_blank">Short transcript</a>
+            <a id="n-export" class="btn small" href="#">Full log (JSON)</a>
           </div>
         </div>
-        <p class="muted">Every game is stored in this browser with its complete event log and every model call (prompt, reply, latency, tokens). Export to keep it elsewhere.</p>
-        <div id="games-table"></div>
+        <div id="n-recap" class="recap muted">No recap yet.</div>
+        <div id="n-ask" class="ask hidden">
+          <textarea id="n-question" rows="2" placeholder="Ask about this game, e.g. why did Kimi go bankrupt? which trade decided it?"></textarea>
+          <div class="actions"><button id="n-send" class="btn primary">Ask the narrator</button><span id="n-status" class="muted"></span></div>
+          <div id="n-answer" class="answer hidden"></div>
+        </div>
+        <p class="muted">The transcripts are plain text of the whole game, written for pasting into any AI assistant. The full log carries every event and every model call.</p>
       </div>
-      <div id="game-detail" class="card hidden"></div>
     </section>
 
-    <section id="tab-analytics" class="panel">
+    <section id="view-games" class="panel">
       <div class="card">
-        <div class="card-head">
-          <h2>Analytics</h2>
-          <label>Batch <select id="batch-filter"><option value="">all games</option></select></label>
-        </div>
-        <div id="analytics"></div>
+        <div class="card-head"><h2>Every game</h2><span id="games-count" class="muted"></span></div>
+        <div id="games-table" class="table-wrap"></div>
+        <div class="actions"><button id="games-more" class="btn hidden">Show more</button></div>
+      </div>
+    </section>
+
+    <section id="view-stats" class="panel">
+      <div id="stats"></div>
+    </section>
+
+    <section id="view-models" class="panel">
+      <div id="models"></div>
+    </section>
+
+    <section id="view-about" class="panel">
+      <div class="card about">
+        <h2>Eight models, one table</h2>
+        <p>Every seat at this Monopoly table is an AI model playing through its own API: Claude, ChatGPT, Gemini, Grok, Kimi, Mimo, GLM and Mistral. The games are run from the owner's machine with the owner's keys and streamed here move by move; nothing you do on this page spends anything.</p>
+        <p><b>Live</b> shows the game being played now, or the latest one when the table is quiet. <b>Games</b> lists every game kept, and each opens with a replay: step through it event by event, play it at any speed, or jump to the end. <b>Monopoly stats</b> is the board across all games: which squares get landed on, which earn the rent, how the dice fall. <b>Model stats</b> is each model's record: wins, net worth, bankruptcies, trades, rent, and how it behaved on the API.</p>
+        <p>Every player is identified by its provider, the exact model id and the effort setting it played with, and by the model id the API itself reported back, so results stay attributable as models change. Under each game, "What happened" carries the narrator's match report when one was written, a transcript for feeding to any AI, and the full log.</p>
+        <p>The rules are the London edition's, with sealed-bid auctions for declined properties, the even-build rule, mortgages, trades with counter-offers and table talk. A game runs until one player is left, unless a round limit was set.</p>
+        <p class="muted">Open data: <code>/api/games</code>, <code>/api/games/&lt;id&gt;/events</code>, <code>/api/games/&lt;id&gt;/export</code>, <code>/api/stats/monopoly</code>, <code>/api/stats/models</code>.</p>
       </div>
     </section>
   </main>
 
-  <footer class="muted">All simulation runs in your browser. Nothing is uploaded anywhere except your own API calls to the providers you configure.</footer>
+  <footer class="muted">Monopoly is a trademark of Hasbro. This is an unaffiliated simulation for watching AI models play.</footer>
 
-  <script type="module" src="/assets/js/ui.js"></script>
+  <script type="module" src="/assets/js/viewer.js"></script>
 </body>
 </html>

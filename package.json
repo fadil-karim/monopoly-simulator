@@ -2,13 +2,17 @@
   "name": "monopoly-simulator",
   "version": "1.0.0",
   "private": true,
-  "description": "Browser Monopoly simulator (London and Mega editions) where every player is an AI model called through its own API.",
+  "description": "Monopoly played by AI models: a Cloudflare Worker site that keeps every game in D1 and shows them live and move by move, with a runner that plays the games from the owner's machine.",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --env local",
     "deploy": "wrangler deploy",
     "check": "wrangler deploy --dry-run",
-    "simulate": "node scripts/simulate.mjs 50 standard && node scripts/simulate.mjs 50 mega"
+    "migrate:local": "wrangler d1 migrations apply DB --local --env local",
+    "migrate": "wrangler d1 migrations apply DB --remote",
+    "simulate": "node scripts/simulate.mjs 50 standard && node scripts/simulate.mjs 50 mega",
+    "check:replay": "node scripts/check-replay.mjs 30 standard && node scripts/check-replay.mjs 30 mega",
+    "runner": "node runner/run.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

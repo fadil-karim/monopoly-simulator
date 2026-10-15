@@ -37,6 +37,7 @@ export const DEFAULT_CONFIG = {
   jailFine: 50,
   freeParkingJackpot: false,
   shuffleOrder: true, // randomise seating each game so turn order does not bias results
+  turnDelayMs: 0, // a pause before each turn, so a bot-only game can be watched live
 };
 
 export class Game {
@@ -299,6 +300,7 @@ export class Game {
   }
 
   async playTurn(p) {
+    if (this.config.turnDelayMs > 0) await new Promise((r) => setTimeout(r, this.config.turnDelayMs));
     this.turn++;
     this.log('turn_start', { player: p.id, cash: p.cash, pos: p.pos, inJail: p.inJail });
     const pre = await this.prerollPhase(p);
