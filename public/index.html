@@ -14,6 +14,14 @@
       <span class="logo" aria-hidden="true"></span>
       <h1><span class="plate">MONOPOLY</span> AI Simulator <small>London edition</small></h1>
     </div>
+    <div class="names" id="names">
+      <button id="names-btn" class="btn small" aria-haspopup="listbox" aria-expanded="false" title="Read the board as another edition">Board: London · £</button>
+      <div id="names-pop" class="names-pop hidden">
+        <input id="names-search" type="search" placeholder="Search editions" autocomplete="off" aria-label="Search editions">
+        <ul id="names-list" role="listbox"></ul>
+        <p class="muted">The names and the currency change; the game does not. Names apply to the standard board.</p>
+      </div>
+    </div>
     <nav class="tabs" role="tablist">
       <a class="tab" data-view="live" href="#live">Live</a>
       <a class="tab" data-view="games" href="#games">Games</a>

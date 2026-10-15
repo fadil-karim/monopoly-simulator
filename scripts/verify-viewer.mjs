@@ -18,7 +18,7 @@ mkdirSync(out, { recursive: true });
 const url = (process.env.SITE || 'http://127.0.0.1:8789').replace(/\/?$/, '/');
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-const errors = []; page.on('pageerror', (e) => errors.push('pageerror: ' + e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+const errors = []; page.on('pageerror', (e) => errors.push('pageerror: ' + e.message)); page.on('console', (m) => { if (m.type() === 'error' && !/status of 404/.test(m.text())) errors.push('console: ' + m.text()); }); // a missing game answers 404 by design
 const must = (c, msg) => { if (!c) throw new Error('FAILED: ' + msg); console.log('ok  ' + msg); };
 const text = (sel) => page.evaluate((s) => (document.querySelector(s) || { innerText: '' }).innerText, sel);
 const wait = (ms) => page.waitForTimeout(ms);
@@ -26,7 +26,7 @@ const wait = (ms) => page.waitForTimeout(ms);
 const liveNow = await (await fetch(url + 'api/live')).json();
 const L = liveNow.latest; const N = L.eventCount;
 const list = await (await fetch(url + 'api/games?limit=50')).json();
-await page.goto(url); await page.waitForFunction(() => document.querySelectorAll('#board .cell').length >= 40, null, { timeout: 20000 });
+await page.goto(url); await page.waitForFunction(() => /FINISHED|LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must(/No game is being played right now/.test(await text('#notice')), 'live tab says the table is quiet and shows the latest game');
 must(/FINISHED/.test(await text('#g-status')), 'status reads FINISHED');
 must(new RegExp(`event ${N} of ${N}`).test(await text('#r-info')), 'replay sits at the end: ' + await text('#r-info'));
@@ -80,7 +80,8 @@ must((await text('#g-title')) === second.id && /FINISHED/.test(await text('#g-st
 // 6. stats
 await page.goto(url + '#stats'); await page.waitForSelector('#stats .heat');
 const st = await text('#stats');
-must(new RegExp(`across ${list.total} finished games`).test(st) && /ROUNDS A GAME/i.test(st) && /How the dice fell/i.test(st), 'monopoly stats tiles and dice');
+const finished = list.games.filter((g) => g.status === 'finished').length;
+must(new RegExp(`across ${finished} finished game`).test(st) && /ROUNDS A GAME/i.test(st) && /How the dice fell/i.test(st), 'monopoly stats tiles and dice: ' + (st.match(/across [^\n]*/) || [''])[0]);
 must((await page.$$('#stats .heat .hcell')).length === 40, 'heat board has forty squares');
 must(/Most landed on/i.test(st) && /by colour group/i.test(st) && /Every property/i.test(st) && /Old Kent Road/i.test(st), 'landings, rent and property table');
 await page.screenshot({ path: `${out}/stats.png`, fullPage: true });
@@ -105,7 +106,35 @@ must(/wins after 12 rounds/.test(await text('#g-sub')), 'the live game finished 
 const fin = await text('#r-info');
 await wait(2500);
 must(fin === await text('#r-info') && /GAME OVER/.test(await text('#events')), 'polling stopped at the end with the final event in the feed');
-// 9. phone
+// 9. the board when there is no game, and the edition selector
+await page.goto(url + '#game/does-not-exist'); await page.waitForFunction(() => /no game called/.test(document.querySelector('#notice').innerText), null, { timeout: 15000 });
+must((await page.$$('#board .cell')).length === 40 && /MONOPOLY/.test(await text('#centre')) && /No such game/.test(await text('#centre')), 'the empty board shows every square');
+must(/Old Kent Road/i.test(await text('#board')) && /Mayfair/i.test(await text('#board')), 'London names on the empty board');
+await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.click('#names-btn'); await wait(100);
+must(!(await page.evaluate(() => document.querySelector('#names-pop').classList.contains('hidden'))) && (await page.$$('#names-list li[data-id]')).length === 7, 'the edition list opens with seven editions');
+await page.type('#names-search', 'atlantic'); await wait(100);
+must((await page.$$('#names-list li[data-id]')).length === 1, 'the search narrows the list');
+await page.keyboard.press('Enter'); await wait(400);
+must(/Board: Atlantic City · \$/.test(await text('#names-btn')), 'Enter picks the edition: ' + await text('#names-btn'));
+must(/Boardwalk/i.test(await text('#board')) && /Mediterranean/i.test(await text('#board')) && !/Mayfair/i.test(await text('#board')) && !/£/.test(await text('#board')) && /\$400/.test(await text('#board')), 'the board reads as Atlantic City, prices in dollars');
+must(/\$/.test(await text('#centre')) && !/£/.test(await text('#centre')), 'the centre is in dollars');
+must(/\$/.test(await text('#events')) && !/£/.test(await text('#events')) && !/Old Kent Road|Mayfair|Whitechapel|Pall Mall/.test(await text('#events')), 'the events feed reads in dollars with American names');
+must(/Made \$/.test(await text('#player-cards')), 'the player cards are in dollars');
+await page.screenshot({ path: `${out}/edition-us.png` });
+await page.reload(); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+must(/Atlantic City/.test(await text('#names-btn')) && /Boardwalk/i.test(await text('#board')), 'the choice survives a reload');
+await page.goto(url + '#stats'); await page.waitForSelector('#stats .heat');
+must(/Boardwalk/i.test(await text('#stats .heat')) && /read as Atlantic City/i.test(await text('#stats')), 'the statistics read as Atlantic City too');
+await page.click('#names-btn'); await page.type('#names-search', 'nether'); await page.click('#names-list li[data-id]'); await wait(300);
+must(/Netherlands · €/.test(await text('#names-btn')) && /Kalverstraat/i.test(await text('#stats .heat')) && / €/.test(await text('#stats')), 'a click picks the Dutch board with euros after the amount');
+await page.click('#names-btn'); await page.type('#names-search', 'london'); await page.keyboard.press('Enter'); await wait(200);
+must(/Board: London · £/.test(await text('#names-btn')), 'back to London');
+// 10. dark mode
+await page.emulateMedia({ colorScheme: 'dark' }); await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.screenshot({ path: `${out}/live-dark.png` });
+await page.emulateMedia({ colorScheme: 'light' });
+// 11. phone
 await page.setViewportSize({ width: 390, height: 844 }); await wait(300);
 await page.screenshot({ path: `${out}/live-mobile.png`, fullPage: true });
 must(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no sideways scroll on a phone');

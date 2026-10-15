@@ -7,11 +7,19 @@ import { ReplayGame } from './replay.js';
 import { StatsTracker, EXPECTED_ROLLS, meanRoll } from './stats.js';
 import { fmtEvent, eventLine } from './transcript.js';
 import { barChart } from './analytics.js';
+import { NAME_SETS, nameSet, moneyIn, dressGame } from './names.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const money = (n) => '£' + Math.round(n || 0).toLocaleString();
+// The edition the board is read as: names by position and the currency.
+const NAMES_KEY = 'monopoly-ai.names';
+let namesId = 'london';
+try { namesId = localStorage.getItem(NAMES_KEY) || 'london'; } catch { /* storage unavailable */ }
+if (!NAME_SETS.some((x) => x.id === namesId)) namesId = 'london';
+const currentSet = () => nameSet(namesId);
+const money = (n) => moneyIn(currentSet(), n);
+const nameAt = (edition, i, fallback) => (edition === 'standard' && currentSet().names ? currentSet().names[i] : fallback);
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 const fmtDur = (ms) => { if (!ms) return '—'; if (ms < 60000) return `${Math.max(1, Math.round(ms / 1000))} s`; const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${(m / 60).toFixed(1)} h`; };
@@ -80,8 +88,22 @@ async function openGame(id, { liveMode }) {
   } catch (e) {
     if (token !== V.token) return;
     $('#g-sub').textContent = '';
-    notice(e.status === 503 ? 'The site has no database yet, so there are no games to show.' : `Could not load game ${id}: ${e.message}`);
+    notice(e.status === 503 ? 'The site has no database yet, so there are no games to show.' : e.status === 404 ? `There is no game called ${id}.` : `Could not load game ${id}: ${e.message}`);
+    showEmptyBoard(e.status === 404 ? 'No such game' : 'No game to show');
   }
+}
+// The board with every square on it, and nothing on the table.
+function showEmptyBoard(text) {
+  V.game = null;
+  const g = dressGame(new ReplayGame({ edition: 'standard' }), currentSet());
+  renderBoard(g);
+  const c = $('#centre');
+  if (c) c.innerHTML = `<div class="cline">${esc(EDITION_INFO.standard.label)}${currentSet().id !== 'london' ? ` · read as ${esc(currentSet().label)}` : ''}</div>
+    <div class="cmid"><div class="mlogo"><span>MONOPOLY</span></div><div class="note">${esc(text || 'No game on the table')}</div></div>
+    <div class="cbox"><div class="dice">🎲</div><div class="last">The next game appears here as soon as it starts.</div></div>`;
+  $('#player-cards').innerHTML = '';
+  clearFeeds();
+  renderBar();
 }
 function addCalls(list) {
   let added = false;
@@ -93,7 +115,7 @@ function addCalls(list) {
 function seek(n) {
   n = Math.max(0, Math.min(V.events.length, n));
   if (!V.meta) return;
-  if (!V.game || n < V.cursor) { V.game = new ReplayGame(metaFor()); V.game.callSeen = new Set(); V.cursor = 0; clearFeeds(); }
+  if (!V.game || n < V.cursor) { V.game = dressGame(new ReplayGame(metaFor()), currentSet()); V.game.callSeen = new Set(); V.cursor = 0; clearFeeds(); }
   const big = n - V.cursor > 400;
   const evFeed = $('#events'), chatFeed = $('#chat'), llmFeed = $('#llm-feed');
   for (let k = V.cursor; k < n; k++) {
@@ -125,7 +147,7 @@ function appendLine(feed, cls, text) { const div = document.createElement('div')
 function appendChat(feed, e) {
   const from = V.game.player(e.player);
   const div = document.createElement('div');
-  div.innerHTML = `<span class="who" style="--c:${esc(from && from.meta.colour || '#888')}">${esc(from ? from.name : e.player)}</span>${e.to ? ` <span class="priv">(to ${esc((V.game.player(e.to) || { name: e.to }).name)})</span>` : ''}: ${esc(e.message)}`;
+  div.innerHTML = `<span class="who" style="--c:${esc(from && from.meta.colour || '#888')}">${esc(from ? from.name : e.player)}</span>${e.to ? ` <span class="priv">(to ${esc((V.game.player(e.to) || { name: e.to }).name)})</span>` : ''}: ${esc(V.game.displayText(e.message))}`;
   feed.appendChild(div);
 }
 function appendLlm(feed, c) {
@@ -257,8 +279,8 @@ async function openLive() {
     wrap.classList.toggle('hidden', r.running.length < 2);
     if (r.running.length) { if (V.id !== r.running[0].id || !V.live) openGame(r.running[0].id, { liveMode: true }); }
     else if (r.latest) { if (V.id !== r.latest.id) openGame(r.latest.id, { liveMode: true }); notice('No game is being played right now. This is the latest one; the table comes back to life here when the next game starts.'); }
-    else { notice(health.db ? 'No games yet. The first one appears here as soon as the runner starts it.' : 'The site has no database yet, so there is nothing to show.'); $('#g-sub').textContent = ''; }
-  } catch (e) { notice(e.status === 503 ? 'The site has no database yet, so there is nothing to show.' : `Could not reach the site: ${e.message}`); }
+    else { notice(health.db ? 'No games yet. The first one appears here as soon as the runner starts it.' : 'The site has no database yet, so there is nothing to show.'); $('#g-sub').textContent = ''; $('#g-title').textContent = ''; showEmptyBoard('No games yet'); }
+  } catch (e) { notice(e.status === 503 ? 'The site has no database yet, so there is nothing to show.' : `Could not reach the site: ${e.message}`); $('#g-title').textContent = ''; $('#g-sub').textContent = ''; showEmptyBoard('No game to show'); }
   liveTimer = setInterval(() => { if (!V.live) openLive(); }, 15000);
 }
 function stopLiveTab() { clearInterval(liveTimer); liveTimer = null; }
@@ -283,6 +305,7 @@ function renderBoard(game) {
   const tokensAt = {};
   for (const p of game.players) if (!p.bankrupt) (tokensAt[p.pos] = tokensAt[p.pos] || []).push(p);
   const focus = pinned != null ? pinned : hovered;
+  const M = (n) => (game.fmtMoney ? game.fmtMoney(n) : money(n));
   let html = '';
   for (const s of game.board) {
     const { row, col } = cellPos(s.i, per);
@@ -294,12 +317,12 @@ function renderBoard(game) {
     if (pr && pr.depot) bld += ' DEPOT';
     const toks = (tokensAt[s.i] || []).map((p) => `<span class="tok" style="background:${esc(colourOf[p.id])}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`).join('');
     const side = row === n ? 'bottom' : col === 1 ? 'left' : row === 1 ? 'top' : 'right';
-    html += `<div class="cell ${corner ? 'corner' : ''} ${side} ${pr && pr.mortgaged ? 'mort' : ''} ${s.price ? 'prop' : ''} ${focus === s.i ? 'focus' : ''} ${pinned === s.i ? 'pinned' : ''}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' £' + s.price : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
+    html += `<div class="cell ${corner ? 'corner' : ''} ${side} ${pr && pr.mortgaged ? 'mort' : ''} ${s.price ? 'prop' : ''} ${focus === s.i ? 'focus' : ''} ${pinned === s.i ? 'pinned' : ''}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
       ${s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : ''}
       ${owner ? '<div class="own"></div>' : ''}
       <div class="tokens">${toks}</div>
       <div class="name">${esc(s.name)}</div>
-      ${s.price ? `<div class="price">£${s.price}</div>` : ''}
+      ${s.price ? `<div class="price">${esc(M(s.price))}</div>` : ''}
       ${bld ? `<div class="bld">${bld}</div>` : ''}
     </div>`;
   }
@@ -362,7 +385,7 @@ function propertyPanel(game, st, i) {
     <div class="deed-head">${esc(s.name)}</div>
     <div class="deed-body">
       <div class="line"><span>Owner</span><b>${owner ? `<span class="dot" style="background:${esc(owner.meta.colour || '#888')}"></span>${esc(owner.name)}` : 'the bank'}</b></div>
-      <div class="line"><span>Price</span><b>£${s.price}</b>${state ? `<span class="state">${esc(state)}</span>` : ''}</div>
+      <div class="line"><span>Price</span><b>${esc(money(s.price))}</b>${state ? `<span class="state">${esc(state)}</span>` : ''}</div>
       <div class="line"><span>Rent generated</span><b>${money(ps.rent)}</b></div>
       <div class="line"><span>Landed on</span><b>${ps.landings} time${ps.landings === 1 ? '' : 's'}</b></div>
       ${earners ? `<div class="sub">Earned by</div><ul class="earners">${earners}</ul>` : ''}
@@ -414,7 +437,7 @@ function renderPlayerCards(game) {
         ${rentRows ? `<ul class="src per">${rentRows}</ul>` : ''}
       </div>
       <div class="rolls"><div class="k">${ps.rollCount} roll${ps.rollCount === 1 ? '' : 's'}${meanRoll(ps.rolls) ? ` · mean ${meanRoll(ps.rolls).toFixed(2)}` : ''}</div>${rollChart(ps.rolls, 160, 48)}</div>
-      ${lastReason ? `<div class="reason">“${esc(lastReason.parsed.reason)}”</div>` : ''}
+      ${lastReason ? `<div class="reason">“${esc(game.displayText ? game.displayText(lastReason.parsed.reason) : lastReason.parsed.reason)}”</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -472,7 +495,8 @@ function heatBoard(ed, squares, key, label) {
     const { row, col } = cellPos(s.i, per);
     const v = squares[s.i] ? squares[s.i][key] || 0 : 0;
     const a = v / max;
-    return `<div class="hcell ${s.i % per === 0 ? 'corner' : ''}" style="grid-row:${row};grid-column:${col};--heat:${(a * 0.85).toFixed(3)};color:${a > 0.55 ? '#fff' : 'var(--text)'}" title="${esc(s.name)}: ${v}"><span class="hn">${esc(s.name)}</span><span class="hv">${v}</span></div>`;
+    const name = nameAt(ed, s.i, s.name);
+    return `<div class="hcell ${s.i % per === 0 ? 'corner' : ''}" style="grid-row:${row};grid-column:${col};--heat:${(a * 0.85).toFixed(3)};color:${a > 0.55 ? '#fff' : 'var(--text)'}" title="${esc(name)}: ${v}"><span class="hn">${esc(name)}</span><span class="hv">${v}</span></div>`;
   }).join('');
   return `<div class="heat" style="grid-template-columns:repeat(${n},1fr);grid-template-rows:repeat(${n},1fr)">${cells}<div class="hcentre"><div class="mlogo"><span>MONOPOLY</span></div><div class="k">${esc(label)}</div></div></div>`;
 }
@@ -491,11 +515,11 @@ async function loadStats() {
     const lengths = Object.entries(d.lengths).map(([b, n]) => ({ label: `${b}–${Number(b) + 9}`, value: n, colour: '#1fb25a' })).sort((x, y) => parseInt(x.label) - parseInt(y.label));
     html += `<div class="card"><h2>How long games run</h2><p class="muted">Games by rounds played.</p>${barChart(lengths, { width: 900, height: 220, valueLabel: (v) => v })}</div>`;
     for (const [ed, b] of Object.entries(d.boards)) {
-      const sq = b.squares;
+      const sq = b.squares.map((s) => ({ ...s, name: nameAt(ed, s.i, s.name) }));
       const top = sq.slice().sort((x, y) => y.landingsPerGame - x.landingsPerGame).slice(0, 14).map((s) => ({ label: s.name, value: s.landingsPerGame, colour: s.group && GROUPS[s.group] ? GROUPS[s.group].colour : '#8c8c8c' }));
       const rentTop = sq.filter((s) => s.price).sort((x, y) => y.rentPerGame - x.rentPerGame).slice(0, 14).map((s) => ({ label: s.name, value: s.rentPerGame, colour: s.group && GROUPS[s.group] ? GROUPS[s.group].colour : '#8c8c8c' }));
       const groups = b.groups.map((g) => ({ label: g.name, value: g.rentPerGame, colour: g.colour }));
-      html += `<div class="card"><h2>${esc(b.label)}: where the tokens land</h2><p class="muted">Landings per game on each square, over ${b.games} game${b.games === 1 ? '' : 's'}. The darker, the more often.</p>
+      html += `<div class="card"><h2>${esc(b.label)}${ed === 'standard' && currentSet().id !== 'london' ? `, read as ${esc(currentSet().label)}` : ''}: where the tokens land</h2><p class="muted">Landings per game on each square, over ${b.games} game${b.games === 1 ? '' : 's'}. The darker, the more often.</p>
         <div class="heat-wrap">${heatBoard(ed, sq, 'landingsPerGame', 'landings a game')}</div>
         <h3>Most landed on</h3>${barChart(top, { width: 900, height: 240, valueLabel: (v) => v })}
         <h3>Rent earned a game, by square</h3>${barChart(rentTop, { width: 900, height: 240, valueLabel: money })}
@@ -534,9 +558,41 @@ async function loadModels() {
   } catch (e) { el.innerHTML = `<div class="card"><p class="muted">${esc(e.status === 503 ? 'The site has no database yet.' : e.message)}</p></div>`; }
 }
 
+// ---------- the edition selector ----------
+function namesLabel() { const set = currentSet(); return `Board: ${set.label} · ${set.currency.symbol}`; }
+function renderNamesList() {
+  const q = $('#names-search').value.trim().toLowerCase();
+  const items = NAME_SETS.filter((set) => !q || `${set.label} ${set.region} ${set.currency.symbol}`.toLowerCase().includes(q));
+  $('#names-list').innerHTML = items.map((set, k) => `<li role="option" data-id="${esc(set.id)}" class="${set.id === namesId ? 'current' : ''} ${k === 0 ? 'active' : ''}" aria-selected="${set.id === namesId}"><span><b>${esc(set.label)}</b> <span class="region">${esc(set.region)}</span></span><span class="cur">${esc(set.currency.symbol)}</span></li>`).join('') || '<li class="none">No edition matches.</li>';
+}
+function openNames(open) {
+  $('#names-pop').classList.toggle('hidden', !open);
+  $('#names-btn').setAttribute('aria-expanded', String(open));
+  if (open) { $('#names-search').value = ''; renderNamesList(); $('#names-search').focus(); }
+}
+function selectNames(id) {
+  if (!NAME_SETS.some((x) => x.id === id)) return;
+  namesId = id;
+  try { localStorage.setItem(NAMES_KEY, id); } catch { /* storage unavailable */ }
+  $('#names-btn').textContent = namesLabel();
+  openNames(false);
+  if (V.game) { const at = V.cursor; V.game = null; seek(at); } else if ($('#view-game').classList.contains('active')) showEmptyBoard();
+  if ($('#view-stats').classList.contains('active')) loadStats();
+}
+$('#names-btn').addEventListener('click', () => openNames($('#names-pop').classList.contains('hidden')));
+$('#names-search').addEventListener('input', renderNamesList);
+$('#names-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { const first = $('#names-list li[data-id]'); if (first) selectNames(first.dataset.id); e.preventDefault(); }
+  if (e.key === 'Escape') openNames(false);
+});
+$('#names-list').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) selectNames(li.dataset.id); });
+document.addEventListener('click', (e) => { if (!e.target.closest('#names')) openNames(false); });
+$('#names-btn').textContent = namesLabel();
+
 // ---------- boot ----------
 (async () => {
   try { health = await api('/health'); } catch { health = { db: false, narrator: false }; }
   if (!health.db) notice('The site has no database yet: the owner creates it once and the games appear here.');
+  showEmptyBoard(health.db ? 'Loading…' : 'No database yet');
   route();
 })();

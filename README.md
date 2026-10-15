@@ -32,6 +32,14 @@ program the owner runs wherever the keys live.
   runner wrote one, a transcript of the whole game as plain text for pasting
   into any AI assistant (full or short), the full log as JSON, and, when the
   owner switches the narrator on, a box to ask the game questions.
+- **Board editions**: a selector in the header, with a search box, reads the
+  same board as another edition by position: London, Atlantic City, Paris,
+  the German, Italian and Dutch classics and the 2008 World Edition. Every
+  name on the page changes with it, on the squares, in the feeds, the deeds,
+  the player cards and the statistics, and so does every amount, in that
+  edition's currency. The game itself is unchanged, so the choice can be
+  made while a game is being watched; it is kept on the device. Editions are
+  listed in `public/assets/js/names.js`, forty names each in board order.
 - **Monopoly stats**: the board across all finished games: game length, goes,
   trades, auctions, bankruptcies, buildings, rent and money flows a game, how
   the dice fell against the two-dice expectation, a heat board of where the
@@ -169,6 +177,7 @@ public/
   assets/js/replay.js        rebuilds a game's state from its event log (checked against the engine)
   assets/js/stats.js         live match, player and property statistics from the event log
   assets/js/transcript.js    one line per event; the plain-text transcript
+  assets/js/names.js         the board editions: names by position and currencies
   assets/js/analytics.js     SVG bar chart
   assets/js/board.js         boards, groups, cards
   assets/js/engine.js        game rules and event log (shared with the runner)

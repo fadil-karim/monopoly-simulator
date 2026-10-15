@@ -20,6 +20,7 @@ public/            everything served as assets
   assets/css|js|fonts   fonts: Jost (OFL) self-hosted, the only font file
   _headers         security + caching headers (fonts immutable; js and css revalidated, because the modules import each other by name)
   robots.txt
+                   js/names.js the board editions (names by position, currencies) the viewer reads a game as
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
@@ -88,6 +89,27 @@ edition line at the top of the centre, the match or the hovered property's
 deed in the middle, the dice and last event boxed at the bottom, the player
 cards beneath with income by source and property and the roll histogram.
 The palette is Monopoly's with the official group colours; the face is Jost.
+When there is no game to show (no database, no games yet, a missing id, or
+while loading) `showEmptyBoard` draws the board with every square and the
+logo in the centre, never a blank.
+
+Board editions (`names.js`): `NAME_SETS` holds forty names in board order
+and a currency per edition (London, Atlantic City, Paris, the German,
+Italian and Dutch classics, the 2008 World Edition; a set is added by
+giving all forty names, GO first). The engine always plays London;
+`dressGame(game, set)` renames the squares of a standard-board game by
+position and gives the game `fmtMoney`, `displayName` (a London name from an
+event to the edition's) and `displayText` (London names and £ amounts
+inside free text: card texts, chat, reasons); `fmtEvent` in
+`transcript.js` reads those hooks when present and prefers square indexes
+over the names stored in events, so a bare engine game still reads as
+London in pounds (the runner and the Worker's transcript). The viewer
+keeps the choice under `monopoly-ai.names`, dresses every `ReplayGame` it
+builds, formats all money through the current set, and renames the
+statistics pages' squares by position; the header's selector is a button
+with a popover (a search box filtering the list, Enter picks the first,
+Escape closes). Names apply to the standard board only; a Mega game keeps
+London names and takes just the currency.
 ## Local development
 
 ```bash
@@ -164,3 +186,4 @@ no new prompt leaves the archive untouched.
 | v1.1 | The players start talking to each other | Players now behave like people at a real table: they chat publicly, whisper to one opponent, answer when addressed and haggle over trades with counter-offers. The speed-die switches and all the pacing limits are gone, so everyone acts before every roll, trades freely and plays until the last player stands. |
 | v1.2 | The board fills the window, in Monopoly's own colours | The live board now fits the window whole, dressed in Monopoly's palette and lettering, with the match in its centre: the goes, purchases, trades, the cash on the table, the money moving to and from the bank and between players, and how the dice have fallen, with the dice and the last event boxed beneath. Hovering any property shows who owns it, what rent it has brought in and to whom, how often it has been landed on and its history of purchases, trades and mortgages, and a click keeps it there; beneath the board every player is laid out with their properties, their takings by source and property, and their own roll distribution. |
 | v1.3 | The table goes public, with a memory | The site is now a viewer for everyone: the games are played from the owner's machine with the owner's keys and streamed in as they happen, every game is kept in a database with its full log, and visitors can watch live, open any past game and step through it, read the narrator's report or hand a transcript to an AI, and compare the board's statistics and every model's record, with each player identified by its provider, exact model and effort. Claude, ChatGPT, Gemini, Grok, Kimi, Mimo, GLM and Mistral have their seats. |
+| v1.4 | The board is always on the table, in any city's names | The board now shows every square whenever there is no game to watch, instead of an empty frame. A selector in the header, with a search box, reads the same board as another edition by position: London, Atlantic City, Paris, the German, Italian and Dutch classics or the 2008 World Edition, and every name and every amount on the page follows, on the squares, in the feeds and deeds, on the player cards and across the statistics, in that edition's currency, without touching the game, even one being watched live. |
