@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Headless engine check: runs heuristic-only games and reports outcomes.
 //   node scripts/simulate.mjs [games] [edition]
-import { Game } from '../public/assets/js/engine.js';
+import { Game } from '../public/assets/app/engine.js';
 
 const games = Number(process.argv[2] || 50);
 const edition = process.argv[3] || 'standard';

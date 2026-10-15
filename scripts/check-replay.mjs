@@ -2,9 +2,9 @@
 // Proves the replay reducer mirrors the engine: runs heuristic games and, after
 // every event, compares the state rebuilt from the log with the engine's own.
 //   node scripts/check-replay.mjs [games] [edition]
-import { Game } from '../public/assets/js/engine.js';
-import { ReplayGame } from '../public/assets/js/replay.js';
-import { transcript } from '../public/assets/js/transcript.js';
+import { Game } from '../public/assets/app/engine.js';
+import { ReplayGame } from '../public/assets/app/replay.js';
+import { transcript } from '../public/assets/app/transcript.js';
 
 const games = Number(process.argv[2] || 30);
 const edition = process.argv[3] || 'standard';

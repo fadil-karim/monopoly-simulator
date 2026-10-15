@@ -2,9 +2,9 @@
 // in D1, takes the runner's uploads (bearer token), and answers the viewer's
 // reads. Without a database bound every data route answers 503 and the viewer
 // says so; the owner creates the database once (see README).
-import { ReplayGame } from '../public/assets/js/replay.js';
-import { transcript } from '../public/assets/js/transcript.js';
-import { callModel } from '../public/assets/js/providers.js';
+import { ReplayGame } from '../public/assets/app/replay.js';
+import { transcript } from '../public/assets/app/transcript.js';
+import { callModel } from '../public/assets/app/providers.js';
 import { aggregateMonopoly, aggregateModels } from './aggregate.js';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization' };

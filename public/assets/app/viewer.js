@@ -559,35 +559,19 @@ async function loadModels() {
 }
 
 // ---------- the edition selector ----------
-function namesLabel() { const set = currentSet(); return `Board: ${set.label} · ${set.currency.symbol}`; }
-function renderNamesList() {
-  const q = $('#names-search').value.trim().toLowerCase();
-  const items = NAME_SETS.filter((set) => !q || `${set.label} ${set.region} ${set.currency.symbol}`.toLowerCase().includes(q));
-  $('#names-list').innerHTML = items.map((set, k) => `<li role="option" data-id="${esc(set.id)}" class="${set.id === namesId ? 'current' : ''} ${k === 0 ? 'active' : ''}" aria-selected="${set.id === namesId}"><span><b>${esc(set.label)}</b> <span class="region">${esc(set.region)}</span></span><span class="cur">${esc(set.currency.symbol)}</span></li>`).join('') || '<li class="none">No edition matches.</li>';
-}
-function openNames(open) {
-  $('#names-pop').classList.toggle('hidden', !open);
-  $('#names-btn').setAttribute('aria-expanded', String(open));
-  if (open) { $('#names-search').value = ''; renderNamesList(); $('#names-search').focus(); }
+function renderNamesSelect() {
+  $('#names-select').innerHTML = NAME_SETS.map((set) => `<option value="${esc(set.id)}" ${set.id === namesId ? 'selected' : ''}>${esc(set.label)} · ${esc(set.currency.symbol)}</option>`).join('');
 }
 function selectNames(id) {
   if (!NAME_SETS.some((x) => x.id === id)) return;
   namesId = id;
   try { localStorage.setItem(NAMES_KEY, id); } catch { /* storage unavailable */ }
-  $('#names-btn').textContent = namesLabel();
-  openNames(false);
+  renderNamesSelect();
   if (V.game) { const at = V.cursor; V.game = null; seek(at); } else if ($('#view-game').classList.contains('active')) showEmptyBoard();
   if ($('#view-stats').classList.contains('active')) loadStats();
 }
-$('#names-btn').addEventListener('click', () => openNames($('#names-pop').classList.contains('hidden')));
-$('#names-search').addEventListener('input', renderNamesList);
-$('#names-search').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { const first = $('#names-list li[data-id]'); if (first) selectNames(first.dataset.id); e.preventDefault(); }
-  if (e.key === 'Escape') openNames(false);
-});
-$('#names-list').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) selectNames(li.dataset.id); });
-document.addEventListener('click', (e) => { if (!e.target.closest('#names')) openNames(false); });
-$('#names-btn').textContent = namesLabel();
+$('#names-select').addEventListener('change', (e) => selectNames(e.target.value));
+renderNamesSelect();
 
 // ---------- boot ----------
 (async () => {

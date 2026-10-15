@@ -1,5 +1,5 @@
 // Aggregations over the stored games for the two statistics pages.
-import { makeBoard, GROUPS, EDITION_INFO } from '../public/assets/js/board.js';
+import { makeBoard, GROUPS, EDITION_INFO } from '../public/assets/app/board.js';
 
 const EXPECTED = [0, 0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1].map((n) => n / 36);
 const parse = (s, d) => { if (s == null) return d; if (typeof s === 'object') return s; try { return JSON.parse(s); } catch { return d; } };

@@ -11,9 +11,9 @@
 
 # Scripts and styles are revalidated on every load (a cheap 304 when unchanged),
 # because the modules import each other by name and a deploy must reach them all.
-/assets/js/*
+/assets/app/*
   Cache-Control: public, max-age=0, must-revalidate
-/assets/css/*
+/assets/style/*
   Cache-Control: public, max-age=0, must-revalidate
 
 # HTML must stay fresh so a deploy is visible immediately.

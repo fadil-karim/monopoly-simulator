@@ -17,10 +17,10 @@ to production**.
 public/            everything served as assets
   index.html       the viewer: live, games, replay, Monopoly stats, model stats, about
   404.html
-  assets/css|js|fonts   fonts: Jost (OFL) self-hosted, the only font file
-  _headers         security + caching headers (fonts immutable; js and css revalidated, because the modules import each other by name)
+  assets/app|style|fonts   app/ the modules (viewer, replay, stats, transcript, names, engine, board, heuristics, providers, ai, runner), style/site.css, fonts/jost.woff2 (OFL, the only font file)
+  _headers         security + caching headers (fonts immutable; app and style revalidated on every load, because the modules import each other by name)
   robots.txt
-                   js/names.js the board editions (names by position, currencies) the viewer reads a game as
+                   app/names.js the board editions (names by position, currencies) the viewer reads a game as
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
@@ -33,7 +33,7 @@ prompt text/       the AI-instruction archive for the version in service
 
 ## How it works
 
-The engine (`public/assets/js/engine.js`) is pure logic shared by the runner,
+The engine (`public/assets/app/engine.js`) is pure logic shared by the runner,
 the Worker and the check scripts; keep it free of DOM references. It logs
 every event with a sequence number and calls `onEvent` and `onLlm` as it
 goes. `replay.js` rebuilds a game's state from the event log alone
@@ -75,7 +75,7 @@ database is not set up yet; the deploy still succeeds. The owner creates the
 database once (`wrangler d1 create`, paste the id, uncomment the block,
 `npm run migrate`, `wrangler secret put RUNNER_TOKEN`).
 
-The viewer (`public/assets/js/viewer.js`) routes by hash: `#live` (the
+The viewer (`public/assets/app/viewer.js`) routes by hash: `#live` (the
 running game, following as events arrive, or the latest finished one; polls
 `/api/live` every 15 s to pick up the next game), `#games`, `#game/<id>`
 (the replay: ⏮ ◀ ▶ ▶| ⏭, speeds of 1/4/15/60 events a second or a turn a
@@ -100,6 +100,12 @@ When there is no game to show (no database, no games yet, a missing id, or
 while loading) `showEmptyBoard` draws the board with every square and the
 logo in the centre, never a blank.
 
+The scripts and the stylesheet live under `/assets/app/` and
+`/assets/style/`, moved there in v1.6 because the first releases had served
+`/assets/js/` and `/assets/css/` as immutable for a year, which left browsers
+holding the old stylesheet against new pages; never move them back under
+those two paths, and never serve them immutable again.
+
 Board editions (`names.js`): `NAME_SETS` holds forty names in board order
 and a currency per edition (London, Atlantic City, Paris, the German,
 Italian and Dutch classics, the 2008 World Edition; a set is added by
@@ -113,10 +119,25 @@ over the names stored in events, so a bare engine game still reads as
 London in pounds (the runner and the Worker's transcript). The viewer
 keeps the choice under `monopoly-ai.names`, dresses every `ReplayGame` it
 builds, formats all money through the current set, and renames the
-statistics pages' squares by position; the header's selector is a button
-with a popover (a search box filtering the list, Enter picks the first,
-Escape closes). Names apply to the standard board only; a Mega game keeps
-London names and takes just the currency.
+statistics pages' squares by position; the header's selector is a plain
+`<select>` (`#names-select`, at the owner's request). Names apply to the
+standard board only; a Mega game keeps London names and takes just the
+currency.
+
+Providers (`providers.js`): four adapter kinds, `anthropic`, `gemini`,
+`openai` (chat completions) and `responses` (the OpenAI Responses shape,
+which Perplexity's Agent API speaks at `https://api.perplexity.ai/v1` under
+provider-prefixed ids such as `openai/gpt-5.5`, `xai/grok-4.7`,
+`perplexity/kimi-k3`, `zai/glm-5.2`; effort maps to its `preset`, fast to
+xhigh; no tools are requested, so no web search is run). Every adapter
+returns `servedModel`, retries once without its optional knobs on a 400,
+and takes `plain: true` to skip the JSON format for prose (the narrator).
+`scripts/check-providers.mjs` drives the Responses and chat shapes against
+a mock. The example config routes ChatGPT, Grok, Kimi and GLM through
+Perplexity with one key, Claude and Gemini directly, and Mimo and Mistral
+directly because Perplexity's catalogue did not list them; the runner's
+`--list-models <provider>` prints a provider's catalogue for the owner's
+key.
 ## Local development
 
 ```bash
@@ -129,7 +150,8 @@ node runner/run.mjs --config runner/config.bots.json --token local-dev-token --g
 ## Verification - before every push to main
 
 1. `npx wrangler deploy --dry-run`
-2. `npm run simulate` - must report `illegal: 0` and no thrown invariant.
+2. `npm run simulate` - must report `illegal: 0` and no thrown invariant;
+   `node scripts/check-providers.mjs` for a change to `providers.js`.
 3. `npm run check:replay` - the reducer against the engine, every event,
    both editions: `ok: true`.
 4. Serve `public/`, render it with headless Chromium, and inspect the
@@ -195,3 +217,4 @@ no new prompt leaves the archive untouched.
 | v1.3 | The table goes public, with a memory | The site is now a viewer for everyone: the games are played from the owner's machine with the owner's keys and streamed in as they happen, every game is kept in a database with its full log, and visitors can watch live, open any past game and step through it, read the narrator's report or hand a transcript to an AI, and compare the board's statistics and every model's record, with each player identified by its provider, exact model and effort. Claude, ChatGPT, Gemini, Grok, Kimi, Mimo, GLM and Mistral have their seats. |
 | v1.4 | The board is always on the table, in any city's names | The board now shows every square whenever there is no game to watch, instead of an empty frame. A selector in the header, with a search box, reads the same board as another edition by position: London, Atlantic City, Paris, the German, Italian and Dutch classics or the 2008 World Edition, and every name and every amount on the page follows, on the squares, in the feeds and deeds, on the player cards and across the statistics, in that edition's currency, without touching the game, even one being watched live. |
 | v1.5 | The board in its own green, as on the box | The board now wears the classic board's colours, taken from the owner's photograph: the same pale green across the squares and the centre, black rules between them, a red edge on a white margin, and cream cards for the figures, the dice and the deeds. It looks the same in the dark theme, where only the page around it changes. |
+| v1.6 | One Perplexity key for the seats, a plain dropdown, a fresh stylesheet | ChatGPT, Grok, Kimi and GLM now play through Perplexity's Agent API with a single key, under the ids it serves, while Claude and Gemini stay direct; a runner option prints a provider's current catalogue. The board edition is a plain dropdown in the header. The scripts and the stylesheet moved to new paths so every browser fetches the current ones, after the earliest releases had told browsers to keep the old stylesheet for a year, which is what left the page unstyled. |

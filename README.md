@@ -33,14 +33,14 @@ program the owner runs wherever the keys live.
   runner wrote one, a transcript of the whole game as plain text for pasting
   into any AI assistant (full or short), the full log as JSON, and, when the
   owner switches the narrator on, a box to ask the game questions.
-- **Board editions**: a selector in the header, with a search box, reads the
-  same board as another edition by position: London, Atlantic City, Paris,
+- **Board editions**: a dropdown in the header reads the same board as
+  another edition by position: London, Atlantic City, Paris,
   the German, Italian and Dutch classics and the 2008 World Edition. Every
   name on the page changes with it, on the squares, in the feeds, the deeds,
   the player cards and the statistics, and so does every amount, in that
   edition's currency. The game itself is unchanged, so the choice can be
   made while a game is being watched; it is kept on the device. Editions are
-  listed in `public/assets/js/names.js`, forty names each in board order.
+  listed in `public/assets/app/names.js`, forty names each in board order.
 - **Monopoly stats**: the board across all finished games: game length, goes,
   trades, auctions, bankruptcies, buildings, rent and money flows a game, how
   the dice fell against the two-dice expectation, a heat board of where the
@@ -57,17 +57,44 @@ program the owner runs wherever the keys live.
 
 The example configuration seats Claude (Anthropic), ChatGPT (OpenAI), Gemini
 (Google), Grok (xAI), Kimi (Moonshot), Mimo (Xiaomi), GLM (Z.ai) and Mistral.
+Claude and Gemini are called directly; ChatGPT, Grok, Kimi and GLM go
+through Perplexity's Agent API with one `PERPLEXITY_API_KEY`, under the
+provider-prefixed ids it serves (`openai/gpt-5.5`, `xai/grok-4.7`,
+`perplexity/kimi-k3`, `zai/glm-5.2` in the example; `node runner/run.mjs
+--list-models perplexity` prints the current catalogue for your key). Mimo
+and Mistral stay on their own APIs because Perplexity's catalogue did not
+list them when this was written; to move one, change its `provider` to
+`perplexity` and its `model` to the id the catalogue shows. No web search is
+requested from Perplexity, so a call costs only its tokens.
+
 Each player is a provider, a model id, an effort setting and optional
 instructions; the runner also records the model id each API reports back on
 every call. Providers available: Anthropic, OpenAI, Google Gemini, xAI,
-Mistral, DeepSeek, Groq, Together, OpenRouter, Cohere, Moonshot, Z.ai,
-Xiaomi, any OpenAI-compatible endpoint, and a free rule-based bot. Effort
-maps to each provider's reasoning knob (`output_config.effort` for Claude,
-`reasoning_effort` for OpenAI, xAI and Groq, thinking budgets for Gemini,
-`thinking` on and off for GLM, `reasoning.effort` on OpenRouter); a provider
-that rejects a knob gets the call again without it. Any call that fails or
+Perplexity (Agent API), Mistral, DeepSeek, Groq, Together, OpenRouter,
+Cohere, Moonshot, Z.ai, Xiaomi, any OpenAI-compatible endpoint, and a free
+rule-based bot. Effort maps to each provider's reasoning knob
+(`output_config.effort` for Claude, `reasoning_effort` for OpenAI, xAI and
+Groq, thinking budgets for Gemini, `thinking` on and off for GLM, the
+`preset` on Perplexity, `reasoning.effort` on OpenRouter); a provider that
+rejects a knob gets the call again without it. Any call that fails or
 returns no usable JSON falls back to the rule-based player for that one
 decision and is counted as a fallback.
+
+## Where things run and where the data lives
+
+- **The site and its API** are one Cloudflare Worker, deployed by Workers
+  Builds on every push to `main`. There is nothing to start: the Worker
+  serves the viewer and answers `/api/*`.
+- **The data** lives in Cloudflare D1, a SQLite database bound to the Worker
+  (`migrations/0001_init.sql` is its schema: games, seats, events, model
+  calls). The runner writes into it through the API as a game is played;
+  viewers read from it. Until you create the database the site says so and
+  shows an empty board.
+- **The games** are played by `runner/run.mjs`, a Node program you run on
+  any machine that holds your API keys: your laptop, a VPS, a cron job. It
+  needs Node 20 or later, the keys in `runner/.env`, and the site's address
+  and runner token. Every game is also written to `runner/out/` on that
+  machine as a JSON file.
 
 ## Setting up the site
 
@@ -103,12 +130,9 @@ cat > runner/.env <<'ENV'
 SITE=https://monopoly-simulator.YOUR-ACCOUNT.workers.dev
 RUNNER_TOKEN=the same string as the secret
 ANTHROPIC_API_KEY=...
-OPENAI_API_KEY=...
 GEMINI_API_KEY=...
-XAI_API_KEY=...
-MOONSHOT_API_KEY=...
+PERPLEXITY_API_KEY=...
 XIAOMI_API_KEY=...
-ZAI_API_KEY=...
 MISTRAL_API_KEY=...
 ENV
 node runner/run.mjs --loop
@@ -117,7 +141,8 @@ node runner/run.mjs --loop
 `--loop` plays a batch of `games` from the config, pauses
 `pauseBetweenGamesMs`, and starts the next; `--games`, `--concurrency`,
 `--seed`, `--edition`, `--max-rounds`, `--delay` (a pause before every turn)
-and `--dry` (play without uploading) override the config. Every game is also
+and `--dry` (play without uploading) override the config; `--list-models
+<provider>` prints what a provider serves to your key and exits. Every game is also
 written to `runner/out/<id>.json`. A player whose key is missing plays as the
 rule-based bot and says so at start. With `"narrator"` in the config the
 runner writes the match report at the end of each game with that model. Stop
@@ -164,6 +189,7 @@ then open http://127.0.0.1:8789 (or whatever port wrangler prints).
 npm run simulate           # bot games: invariants and the illegal-action count
 npm run check:replay       # the replay reducer against the engine, every event
 npm run check              # wrangler deploy --dry-run
+node scripts/check-providers.mjs # the provider adapters against a mock: the Responses shape, the chat shape, the retry without knobs
 node scripts/verify-viewer.mjs   # the viewer in headless Chromium against the local Worker
 ```
 
@@ -173,19 +199,19 @@ node scripts/verify-viewer.mjs   # the viewer in headless Chromium against the l
 public/
   index.html                 the viewer: live, games, replay, Monopoly stats, model stats, about
   404.html                   themed not-found page
-  assets/css/site.css
-  assets/js/viewer.js        the viewer controller
-  assets/js/replay.js        rebuilds a game's state from its event log (checked against the engine)
-  assets/js/stats.js         live match, player and property statistics from the event log
-  assets/js/transcript.js    one line per event; the plain-text transcript
-  assets/js/names.js         the board editions: names by position and currencies
-  assets/js/analytics.js     SVG bar chart
-  assets/js/board.js         boards, groups, cards
-  assets/js/engine.js        game rules and event log (shared with the runner)
-  assets/js/heuristics.js    rule-based decisions and fallbacks
-  assets/js/providers.js     provider adapters and effort mapping
-  assets/js/ai.js            prompts, JSON parsing, model-call records
-  assets/js/runner.js        batch runner used by runner/run.mjs
+  assets/style/site.css
+  assets/app/viewer.js        the viewer controller
+  assets/app/replay.js        rebuilds a game's state from its event log (checked against the engine)
+  assets/app/stats.js         live match, player and property statistics from the event log
+  assets/app/transcript.js    one line per event; the plain-text transcript
+  assets/app/names.js         the board editions: names by position and currencies
+  assets/app/analytics.js     SVG bar chart
+  assets/app/board.js         boards, groups, cards
+  assets/app/engine.js        game rules and event log (shared with the runner)
+  assets/app/heuristics.js    rule-based decisions and fallbacks
+  assets/app/providers.js     provider adapters and effort mapping
+  assets/app/ai.js            prompts, JSON parsing, model-call records
+  assets/app/runner.js        batch runner used by runner/run.mjs
   assets/fonts/jost.woff2    Jost (OFL), the Kabel-style face, self-hosted
 src/worker.js                the Worker: /api/* over D1, assets for the rest
 src/aggregate.js             the statistics aggregations
@@ -196,6 +222,7 @@ runner/config.bots.json      rule-based players, for local tests
 scripts/simulate.mjs         headless engine check
 scripts/check-replay.mjs     the replay reducer against the engine
 scripts/verify-viewer.mjs    the viewer in headless Chromium
+scripts/check-providers.mjs  the provider adapters against a mock server
 wrangler.jsonc               Worker + assets + (once created) the D1 binding
 ```
 

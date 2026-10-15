@@ -67,6 +67,12 @@ export const PROVIDERS = {
     effortNote: 'No effort parameter.',
     keyUrl: 'https://dashboard.cohere.com/api-keys',
   },
+  perplexity: {
+    label: 'Perplexity (Agent API)', kind: 'responses', base: 'https://api.perplexity.ai/v1', env: 'PERPLEXITY_API_KEY', reasoning: 'preset',
+    models: ['openai/gpt-5.5', 'openai/gpt-5.6-sol', 'openai/gpt-6-luna', 'xai/grok-4.7', 'xai/grok-4.5', 'perplexity/kimi-k3', 'zai/glm-5.2', 'anthropic/claude-opus-5-5', 'google/gemini-3.1-pro-preview', 'perplexity/sonar'],
+    effortNote: 'One key for many providers: the Agent API serves OpenAI, xAI, Moonshot, Z.ai, Anthropic and Google models under provider-prefixed ids (GET /v1/models lists them). Effort maps to the preset: fast, low, medium, high or xhigh. No web search is requested, so a call costs only its tokens.',
+    keyUrl: 'https://www.perplexity.ai/account/api',
+  },
   moonshot: {
     label: 'Moonshot (Kimi)', kind: 'openai', base: 'https://api.moonshot.ai/v1', env: 'MOONSHOT_API_KEY',
     models: ['kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-0905-preview', 'kimi-k2-turbo-preview'],
@@ -105,6 +111,11 @@ function mapEffort(providerId, effort) {
     return effort; // low|medium|high|xhigh|max
   }
   if (p.kind === 'gemini') return effort;
+  if (providerId === 'perplexity') {
+    if (effort === 'none' || effort === 'minimal') return 'fast';
+    if (effort === 'xhigh' || effort === 'max') return 'xhigh';
+    return effort; // low|medium|high
+  }
   if (providerId === 'openrouter') {
     if (effort === 'none') return null;
     if (effort === 'minimal') return 'low';
@@ -206,6 +217,7 @@ export async function callModel(opts) {
     let out;
     if (provider.kind === 'anthropic') out = await callAnthropic(opts, provider);
     else if (provider.kind === 'gemini') out = await callGemini(opts, provider);
+    else if (provider.kind === 'responses') out = await callResponses(opts, provider);
     else out = await callOpenAICompat(opts, provider);
     out.latencyMs = Date.now() - t0;
     return out;
@@ -352,6 +364,52 @@ async function callOpenAICompat(o, provider) {
       reasoning: (u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens) || null,
     },
     stopReason: choice ? choice.finish_reason : null,
+  };
+}
+
+// The OpenAI Responses shape, which Perplexity's Agent API speaks: the system
+// text and the user turn go in `input`, the reply comes back as output items.
+async function callResponses(o, provider) {
+  const base = (o.baseUrl || provider.base).replace(/\/$/, '');
+  const eff = mapEffort(o.provider, o.effort);
+  const body = {
+    model: o.model,
+    input: [
+      { role: 'system', content: o.system.map((b) => b.text).join('\n\n') },
+      { role: 'user', content: o.user },
+    ],
+    max_output_tokens: (o.maxTokens || 1500) + headroom(o.effort),
+  };
+  const optional = {};
+  if (eff) { if (provider.reasoning === 'preset') optional.preset = eff; else optional.reasoning = { effort: eff }; }
+  if (o.temperature != null) optional.temperature = o.temperature;
+  if (!o.plain) optional.text = { format: { type: 'json_object' } };
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey || 'none'}` };
+  const send = async (b) => {
+    const r = await fetchJson(`${base}/responses`, { method: 'POST', headers, body: JSON.stringify(b) }, o.timeoutMs || 60000, o.signal);
+    if (!r.ok) throw new ProviderError(`${provider.label} ${r.status}: ${(r.json && r.json.error && (r.json.error.message || JSON.stringify(r.json.error))) || r.text.slice(0, 300)}`, r.status, r.json);
+    return r.json;
+  };
+  let json; let request = { ...body, ...optional };
+  try {
+    json = await withRetries(() => send(request));
+  } catch (e) {
+    if (is400(e) && Object.keys(optional).length) {
+      request = body;
+      json = await withRetries(() => send(body));
+    } else throw e;
+  }
+  let text = typeof json.output_text === 'string' ? json.output_text : '';
+  if (!text) for (const item of json.output || []) if (item.type === 'message') for (const c of item.content || []) if ((c.type === 'output_text' || c.type === 'text') && c.text) text += c.text;
+  const u = json.usage || {};
+  return {
+    text, raw: json, request, servedModel: json.model || null,
+    usage: {
+      input: u.input_tokens || 0, output: u.output_tokens || 0,
+      cached: (u.input_tokens_details && u.input_tokens_details.cached_tokens) || 0,
+      reasoning: (u.output_tokens_details && u.output_tokens_details.reasoning_tokens) || null,
+    },
+    stopReason: json.status || null,
   };
 }
 

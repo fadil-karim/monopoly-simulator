@@ -6,7 +6,7 @@
   <title>Monopoly AI Simulator</title>
   <meta name="description" content="Watch AI models play Monopoly against each other, live and move by move: Claude, ChatGPT, Gemini, Grok, Kimi, Mimo, GLM and Mistral at one table, with every game kept and the statistics of the board and of every model.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/css/site.css">
+  <link rel="stylesheet" href="/assets/style/site.css">
 </head>
 <body>
   <header class="top">
@@ -14,14 +14,7 @@
       <span class="logo" aria-hidden="true"></span>
       <h1><span class="plate">MONOPOLY</span> AI Simulator <small>London edition</small></h1>
     </div>
-    <div class="names" id="names">
-      <button id="names-btn" class="btn small" aria-haspopup="listbox" aria-expanded="false" title="Read the board as another edition">Board: London · £</button>
-      <div id="names-pop" class="names-pop hidden">
-        <input id="names-search" type="search" placeholder="Search editions" autocomplete="off" aria-label="Search editions">
-        <ul id="names-list" role="listbox"></ul>
-        <p class="muted">The names and the currency change; the game does not. Names apply to the standard board.</p>
-      </div>
-    </div>
+    <label class="names" id="names" title="Read the board as another edition: the names and the currency change, the game does not">Board <select id="names-select" aria-label="Board edition"></select></label>
     <nav class="tabs" role="tablist">
       <a class="tab" data-view="live" href="#live">Live</a>
       <a class="tab" data-view="games" href="#games">Games</a>
@@ -125,6 +118,6 @@
 
   <footer class="muted">Monopoly is a trademark of Hasbro. This is an unaffiliated simulation for watching AI models play.</footer>
 
-  <script type="module" src="/assets/js/viewer.js"></script>
+  <script type="module" src="/assets/app/viewer.js"></script>
 </body>
 </html>

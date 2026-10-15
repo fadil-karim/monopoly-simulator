@@ -12,11 +12,11 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Runner, gameRecord } from '../public/assets/js/runner.js';
-import { PROVIDERS, callModel } from '../public/assets/js/providers.js';
-import { StatsTracker } from '../public/assets/js/stats.js';
-import { transcript } from '../public/assets/js/transcript.js';
-import { HOTEL, SKYSCRAPER } from '../public/assets/js/engine.js';
+import { Runner, gameRecord } from '../public/assets/app/runner.js';
+import { PROVIDERS, callModel, listModels } from '../public/assets/app/providers.js';
+import { StatsTracker } from '../public/assets/app/stats.js';
+import { transcript } from '../public/assets/app/transcript.js';
+import { HOTEL, SKYSCRAPER } from '../public/assets/app/engine.js';
 
 const VERSION = '1.3';
 const here = dirname(fileURLToPath(import.meta.url));
@@ -44,7 +44,8 @@ if (args.help) {
   --token <t>         the runner token (RUNNER_TOKEN)
   --dry               play without uploading (local copies only)
   --log-prompts       store every prompt and system block with the calls
-  --out <dir>         local copies of every game (runner/out)`);
+  --out <dir>         local copies of every game (runner/out)
+  --list-models <p>   print the models a provider serves to your key (e.g. perplexity) and exit`);
   process.exit(0);
 }
 loadDotEnv(join(here, '.env'));
@@ -55,8 +56,8 @@ const token = args.token || process.env.RUNNER_TOKEN || '';
 const dry = !!args.dry;
 const outDir = resolve(args.out || cfg.out || join(here, 'out'));
 mkdirSync(outDir, { recursive: true });
-if (!dry && !site) die('no site: set "site" in the config, SITE in the environment or --site');
-if (!dry && !token) die('no RUNNER_TOKEN in the environment (or --token)');
+if (!dry && !site && !args['list-models']) die('no site: set "site" in the config, SITE in the environment or --site');
+if (!dry && !token && !args['list-models']) die('no RUNNER_TOKEN in the environment (or --token)');
 
 const keys = {};
 for (const [id, p] of Object.entries(PROVIDERS)) if (p.env && process.env[p.env]) keys[id] = process.env[p.env];
@@ -65,6 +66,12 @@ if (!keys.xiaomi && process.env.MIMO_API_KEY) keys.xiaomi = process.env.MIMO_API
 const baseUrls = { ...(cfg.baseUrls || {}) };
 for (const p of cfg.players) if (p.baseUrl) baseUrls[p.provider] = baseUrls[p.provider] || p.baseUrl;
 
+if (args['list-models']) {
+  const id = String(args['list-models']);
+  if (!PROVIDERS[id]) die(`unknown provider "${id}"; one of ${Object.keys(PROVIDERS).join(', ')}`);
+  listModels(id, keys[id], baseUrls[id]).then((list) => { console.log(list.join('\n')); process.exit(0); }).catch((e) => die(`could not list ${id} models: ${e.message}`));
+  await new Promise(() => {});
+}
 const players = (cfg.players || []).map((p, i) => ({ temperature: '', instructions: '', ...p, id: p.id || `p${i + 1}`, effort: p.effort || '' }));
 if (players.length < 2) die('the config needs at least two players');
 for (const p of players) {

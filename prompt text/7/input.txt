@@ -1,0 +1,11 @@
+i will use perplexity api for models that are note anthropic or google
+
+can you set it this way?
+
+fix the board selection
+
+it does this atm
+
+jsut make it a dropdown
+
+wherer is the live data going to be stored btw? and how will i run the backend api and simulation etc

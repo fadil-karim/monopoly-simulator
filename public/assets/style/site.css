@@ -45,17 +45,8 @@ a { color: var(--accent); }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent) url('/favicon.svg') center/cover; display: inline-block; }
-.names { position: relative; }
-.names-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 8px; width: 320px; max-width: calc(100vw - 32px); }
-.names-pop input { margin-bottom: 4px; }
-.names-pop ul { list-style: none; margin: 4px 0; padding: 0; max-height: 280px; overflow: auto; }
-.names-pop li { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 14px; }
-.names-pop li:hover, .names-pop li.active { background: var(--surface-2); }
-.names-pop li.current b { color: var(--accent); }
-.names-pop li.none { color: var(--muted); cursor: default; }
-.names-pop .region { color: var(--muted); font-size: 12px; }
-.names-pop .cur { font-weight: 700; color: var(--muted); }
-.names-pop p { margin: 4px 2px 0; font-size: 12px; }
+.names { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.names select { width: auto; padding: 5px 8px; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
 .cmid .note { font-size: clamp(10px, 1.6vmin, 14px); color: var(--muted); max-width: 80%; }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; border: 1px solid var(--line); max-width: 100%; }
 .tab { border: 0; background: transparent; color: var(--muted); padding: 7px 14px; border-radius: 7px; cursor: pointer; font: inherit; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 12px; text-decoration: none; }
