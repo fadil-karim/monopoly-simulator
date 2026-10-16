@@ -27,8 +27,11 @@ program the owner runs wherever the keys live.
   source and by property, and their own roll distribution; resting the
   pointer on any roll chart's column (or tapping it) says how many rolls of
   that total there have been out of all of them, beside what two fair dice
-  give. Each model's token wears its maker's logo in a ring of the player's
-  colour; the rule-based bot keeps its initial. Table talk, the
+  give. Each model's token is its maker's whole logo, cut out like a
+  sticker with a white outline; the rule-based bot keeps its initial. Houses
+  and hotels stand on the property's colour band, as on the printed board: a
+  green house each and a red hotel, outlined in white and as large as the
+  band allows. Table talk, the
   event feed and the model calls sit beside the board. The board has the
   printed board's proportions and pictures: large corner squares, tall
   property boxes, every name whole, centred and set at one size, Chance's

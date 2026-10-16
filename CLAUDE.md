@@ -207,19 +207,27 @@ height, and the label (`.tip`: `showTip`, and `refreshTip` after every
 render and scroll) says the total, how many rolls of it out of all of them
 and what two fair dice give; a tap shows it on a phone. Moving the pointer
 into the board's centre brings the match back unless a square was clicked to
-keep its deed there. A model's token wears its maker's logo (`modelLogo` in
-`pricing.js` by the model id and then the provider, `/assets/logos/<maker>.svg`,
-`tokenHtml`; Kimi's white K on a black tile, `LOGO_TILE`) in a ring of the
-player's colour, sized from the board (`--tok`, set by `sizeNames`) and
-spread across its square; the rule-based bot keeps its initial.
+keep its deed there. A model's token is its maker's whole logo cut out like
+a sticker (`modelLogo` in `pricing.js` by the model id and then the provider,
+`/assets/logos/<maker>.svg`, Kimi's set on its black tile in the file itself,
+`tokenHtml`; the white outline and the shadow are the `drop-shadow` filters
+on `.tok.logo`), sized from the board (`--tok`, set by `sizeNames`) and
+spread across its square; the rule-based bot keeps its initial on its colour.
+The buildings stand on the colour band, as on the printed board (`BUILDINGS`,
+drawn by `building`: a green house each, a red hotel, the Mega board's grey
+skyscraper, each filling its box with a white outline drawn in the icon); the
+band is a size container, up to three houses, a hotel and a skyscraper take
+its whole thickness (`cqmin`) and a little more, four houses as much as the
+property's width allows, and they stand upright on every side.
 The board has the printed board's proportions: `boardTracks` gives the
 corner squares 1.6 times a property's width, so the properties stand tall
 along the top and bottom and lie wide at the sides, and the centre takes
 what is left. Every square (`.cell`, with a side class `side-top`,
 `side-bottom`, `side-left` or `side-right`; never the bare `top`, which is
 the page header's class and once broke the top row) is a flex box with its
-colour band in flow at the inner edge and a `.txt` block holding the name,
-the square's picture, the price and the buildings, all centred, the name
+colour band in flow at the inner edge, carrying the buildings, and a `.txt`
+block holding the name, the square's picture, the price and a Mega depot,
+all centred, the name
 at the inner edge and the price at the outer one (a top square lists them
 in reverse order so the name still meets the band). Every name on a board
 is set at one size, so the labels read alike: `renderBoard` measures each
@@ -414,3 +422,4 @@ no new prompt leaves the archive untouched.
 | v1.17 | A quieter Live tab, and errors that say why | The Live tab now simply follows the game, without the replay controls: they appear only when you open an older game, which a finished game on the Live tab offers with a Replay this game button, and the full-screen and link buttons step aside when there is no game on the table. When the runner cannot reach the site, or a model's service, it now says why, whether the address does not resolve, the certificate is not trusted or nothing answers, and what to check. |
 | v1.18 | The runner's token, checked before the game begins | The runner now checks its token with the site before it starts a game, so a token the site refuses no longer stops a game that has already begun calling the models, and it says which token it sent, where it came from and how long it is, so a mistyped or stale one is easy to spot. Spaces or a line break around the token, the usual souvenir of copying it from a terminal, no longer make the site refuse it. |
 | v1.19 | Every payment, trade and property on the books | Under every game now sit its ledgers, following the move shown: every payment between the players and with the bank, with a table of who paid whom; every trade offered, with its counter-offers, the answers and how it ended; and every property's landings, rent, price, buildings and history. Each model's token wears its maker's logo, the roll charts say how often each total has come up out of all the rolls, and the dashboard lets you pick each model from a dropdown of everything its provider serves. |
+| v1.20 | Logo stickers on the board, houses you can see | Each model's token is now its maker's whole logo, cut out like a sticker with a white outline, instead of a small logo inside a coloured ring. Houses and hotels now stand on the property's colour band as they do on the printed board, a green house each and a red hotel, much larger than the old marks and outlined in white so they read on every colour. |
