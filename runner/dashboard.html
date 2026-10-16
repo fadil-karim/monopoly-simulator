@@ -44,6 +44,13 @@
   pre.log .warn { color: #ffb86b; }
   a { color: var(--red); }
   .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .hidden { display: none !important; }
+  .pick { display: flex; gap: 6px; align-items: center; }
+  .pick select { min-width: 0; flex: 1 1 auto; }
+  .pick input { min-width: 9em; flex: 1 1 auto; }
+  td.modelcell { min-width: 18em; width: 38%; }
+  td select.provider { min-width: 12.5em; }
+  td select.effort { min-width: 6.5em; }
 </style>
 </head>
 <body>
@@ -88,9 +95,8 @@
     </table>
     <div class="actions" style="margin-top:10px">
       <button type="button" id="add">+ Add a model</button>
-      <span class="note">Every game seats the number above, drawn at random, never the same model twice. The catalogue button lists what a provider serves to your key.</span>
+      <span class="note">Every game seats the number above, drawn at random, never the same model twice. Each model box lists every model its provider serves to your key, and the ones known here before a key is in; refresh asks the provider again, and Other takes any id.</span>
     </div>
-    <datalist id="catalogue"></datalist>
   </section>
 
   <section>
@@ -99,7 +105,7 @@
     <div class="grid" style="margin-top:10px">
       <label class="row"><input id="narrator-on" type="checkbox"> Narrator writes the match report</label>
       <label>Narrator provider <select id="narrator-provider"></select></label>
-      <label>Narrator model <input id="narrator-model"></label>
+      <label>Narrator model <span class="pick"><select id="narrator-model"></select><input id="narrator-model-other" class="hidden" placeholder="model id"></span></label>
       <label>Narrator effort <select id="narrator-effort"></select></label>
     </div>
   </section>
@@ -131,11 +137,63 @@ async function api(path, body) {
 }
 function providerOptions(sel) { return S.providers.filter((p) => p.id !== sel || true).map((p) => `<option value="${esc(p.id)}" ${p.id === sel ? 'selected' : ''}>${esc(p.label)}</option>`).join(''); }
 function effortOptions(sel) { return ['', ...S.efforts].map((e) => `<option value="${esc(e)}" ${e === (sel || '') ? 'selected' : ''}>${e || 'default'}</option>`).join(''); }
+// ---- the model boxes: every model a provider serves ----
+// A provider's models are the ones known here (the server's list, with the names people know them by) and, once its
+// key is in, every one its own catalogue lists for that key, grouped by the maker before the slash when the ids
+// carry one. The model in use always stays on the list; Other takes an id typed by hand.
+const OTHER = '__other';
+const catalogues = {}; // provider -> { models } once asked, with error when the provider would not say
+const providerOf = (id) => S.providers.find((x) => x.id === id) || { id, label: id, known: [], names: {}, models: [] };
+function modelOptions(provider, current) {
+  const p = providerOf(provider), cat = catalogues[provider];
+  const ids = new Set([...(p.known || []), ...((cat && cat.models) || [])]);
+  if (current) ids.add(current);
+  const list = [...ids].sort((a, b) => a.localeCompare(b));
+  const names = p.names || {};
+  const opt = (id) => `<option value="${esc(id)}"${id === current ? ' selected' : ''}>${esc(names[id] ? `${id} · ${names[id]}` : id)}</option>`;
+  const groups = new Map();
+  for (const id of list) { const g = id.includes('/') ? id.slice(0, id.indexOf('/')) : ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(id); }
+  const body = groups.size > 1 ? [...groups].map(([g, gl]) => `<optgroup label="${esc(g || 'other')}">${gl.map(opt).join('')}</optgroup>`).join('') : list.map(opt).join('');
+  return `${current ? '' : '<option value="" selected>choose a model</option>'}${body}<option value="${OTHER}">Other: type an id…</option>`;
+}
+const pickedModel = (sel, other) => (sel.value === OTHER ? other.value.trim() : sel.value);
+// A model id the provider is known to serve stays when the provider changes; otherwise its first known model is chosen.
+function firstModel(provider, keep) {
+  const p = providerOf(provider);
+  if (keep && ((p.known || []).includes(keep) || ((catalogues[provider] || {}).models || []).includes(keep))) return keep;
+  return (p.models && p.models[0]) || (p.known && p.known[0]) || '';
+}
+function refreshModelSelects(provider) {
+  for (const tr of $('#pool').querySelectorAll('tr')) {
+    const sel = $('.model', tr);
+    if ($('.provider', tr).value === provider && sel.value !== OTHER) sel.innerHTML = modelOptions(provider, sel.value);
+  }
+  const ns = $('#narrator-model');
+  if ($('#narrator-provider').value === provider && ns.value !== OTHER) ns.innerHTML = modelOptions(provider, ns.value);
+}
+async function loadCatalogue(provider, force) {
+  const p = providerOf(provider);
+  if (p.kind === 'none' || (!force && catalogues[provider])) return;
+  readKeys();
+  const key = p.env ? keys[p.env] || '' : '';
+  if (p.env && !key) { if (force) $('#msg').textContent = `${p.label}: put its key in above to list every model it serves.`; return; }
+  catalogues[provider] = catalogues[provider] || { models: [] };
+  $('#msg').textContent = `Asking ${p.label} for its models…`;
+  try {
+    const r = await api('/api/models', { provider, key });
+    catalogues[provider] = { models: r.models || [] };
+    $('#msg').textContent = `${p.label}: ${catalogues[provider].models.length} models listed in its model boxes.`;
+  } catch (err) {
+    catalogues[provider] = { models: [], error: err.message };
+    $('#msg').textContent = `${p.label} would not list its models (${err.message}); the ones known here are listed.`;
+  }
+  refreshModelSelects(provider);
+}
 function poolRow(p, i) {
   return `<tr data-i="${i}">
     <td><input class="name" value="${esc(p.name || '')}" placeholder="Name"></td>
     <td><select class="provider">${providerOptions(p.provider)}</select></td>
-    <td style="display:flex;gap:6px"><input class="model" list="catalogue" value="${esc(p.model || '')}" placeholder="model id"><button type="button" class="small cat" title="list what this provider serves to your key">catalogue</button></td>
+    <td class="modelcell"><span class="pick"><select class="model" title="every model this provider serves">${modelOptions(p.provider, p.model || '')}</select><input class="model-other hidden" placeholder="model id"><button type="button" class="small cat" title="ask the provider again for every model it serves to your key">refresh</button></span></td>
     <td><select class="effort">${effortOptions(p.effort)}</select></td>
     <td class="colour"><input type="color" class="col" value="${esc(p.colour || PALETTE[i % PALETTE.length])}"></td>
     <td><button type="button" class="small del" title="remove">✕</button></td>
@@ -159,7 +217,7 @@ function renderKeys() {
 function readPool() {
   cfg.players = [...$('#pool').querySelectorAll('tr')].map((tr, i) => {
     const old = cfg.players[i] || {};
-    return { ...old, id: old.id || slug($('.name', tr).value) || `p${i + 1}`, name: $('.name', tr).value.trim(), provider: $('.provider', tr).value, model: $('.model', tr).value.trim(), effort: $('.effort', tr).value, colour: $('.col', tr).value };
+    return { ...old, id: old.id || slug($('.name', tr).value) || `p${i + 1}`, name: $('.name', tr).value.trim(), provider: $('.provider', tr).value, model: pickedModel($('.model', tr), $('.model-other', tr)), effort: $('.effort', tr).value, colour: $('.col', tr).value };
   });
 }
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -172,7 +230,7 @@ function gather() {
   cfg.pauseBetweenGamesMs = Math.max(0, Number($('#pause').value) || 0) * 1000;
   cfg.universal = $('#universal').value;
   cfg.config = { ...(cfg.config || {}), edition: $('#edition').value, maxRounds: $('#rounds').value ? Number($('#rounds').value) : null };
-  cfg.narrator = $('#narrator-on').checked ? { provider: $('#narrator-provider').value, model: $('#narrator-model').value.trim(), effort: $('#narrator-effort').value } : null;
+  cfg.narrator = $('#narrator-on').checked ? { provider: $('#narrator-provider').value, model: pickedModel($('#narrator-model'), $('#narrator-model-other')), effort: $('#narrator-effort').value } : null;
   const env = { SITE: cfg.site, RUNNER_TOKEN: $('#token').value.trim(), ...keys };
   const options = { loop: $('#loop').checked, dry: $('#dry').checked, games: cfg.games, seats: cfg.seats, edition: cfg.config.edition, maxRounds: cfg.config.maxRounds || 0, delay: Number($('#delay').value) || 0 };
   return { config: cfg, env, options, remember: $('#remember').checked };
@@ -189,11 +247,12 @@ function fill() {
   $('#universal').value = cfg.universal || '';
   $('#narrator-provider').innerHTML = providerOptions((cfg.narrator && cfg.narrator.provider) || 'anthropic');
   $('#narrator-effort').innerHTML = effortOptions(cfg.narrator && cfg.narrator.effort);
-  $('#narrator-model').value = (cfg.narrator && cfg.narrator.model) || '';
+  $('#narrator-model').innerHTML = modelOptions($('#narrator-provider').value, (cfg.narrator && cfg.narrator.model) || '');
   $('#narrator-on').checked = !!cfg.narrator;
   $('#remember').checked = !!(S.env.SITE || Object.keys(S.env.keys).length);
   renderPool();
   $('#msg').textContent = `Table read from ${S.configFile}.`;
+  for (const id of new Set([...cfg.players.map((p) => p.provider), cfg.narrator && cfg.narrator.provider].filter(Boolean))) loadCatalogue(id);
 }
 function renderRun() {
   $('#pill').textContent = S.running ? 'running' : 'idle';
@@ -218,15 +277,36 @@ $('#pool').addEventListener('click', async (e) => {
   const tr = e.target.closest('tr'); if (!tr) return;
   if (e.target.classList.contains('del')) { readPool(); cfg.players.splice(Number(tr.dataset.i), 1); renderPool(); }
   if (e.target.classList.contains('cat')) {
-    readKeys();
-    const provider = $('.provider', tr).value, p = S.providers.find((x) => x.id === provider);
-    e.target.disabled = true; $('#msg').textContent = `Asking ${p ? p.label : provider} for its catalogue…`;
-    try { const r = await api('/api/models', { provider, key: keys[p && p.env] || '' }); $('#catalogue').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join(''); $('#msg').textContent = `${r.models.length} models listed; pick from the model box.`; $('.model', tr).focus(); }
-    catch (err) { $('#msg').textContent = `Catalogue: ${err.message}`; }
+    e.target.disabled = true;
+    await loadCatalogue($('.provider', tr).value, true);
     e.target.disabled = false;
   }
 });
-$('#pool').addEventListener('change', (e) => { if (e.target.classList.contains('provider')) { readPool(); renderKeys(); } });
+// Other shows a box for an id typed by hand; a new provider gets its own models in the model box.
+function otherBox(sel, other) { other.classList.toggle('hidden', sel.value !== OTHER); if (sel.value === OTHER) other.focus(); }
+$('#pool').addEventListener('change', (e) => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  if (e.target.classList.contains('provider')) {
+    const provider = e.target.value;
+    $('.model', tr).innerHTML = modelOptions(provider, firstModel(provider, pickedModel($('.model', tr), $('.model-other', tr))));
+    $('.model-other', tr).classList.add('hidden');
+    readPool(); renderKeys(); loadCatalogue(provider);
+  }
+  if (e.target.classList.contains('model')) otherBox(e.target, $('.model-other', tr));
+});
+$('#narrator-model').addEventListener('change', () => otherBox($('#narrator-model'), $('#narrator-model-other')));
+$('#narrator-provider').addEventListener('change', () => {
+  const provider = $('#narrator-provider').value;
+  $('#narrator-model').innerHTML = modelOptions(provider, firstModel(provider, pickedModel($('#narrator-model'), $('#narrator-model-other'))));
+  $('#narrator-model-other').classList.add('hidden');
+  loadCatalogue(provider);
+});
+// A key typed in lists its provider's models.
+$('#keys').addEventListener('change', (e) => {
+  const env = e.target.dataset && e.target.dataset.env; if (!env) return;
+  readKeys();
+  for (const p of S.providers) if (p.env === env && (cfg.players.some((x) => x.provider === p.id) || $('#narrator-provider').value === p.id)) loadCatalogue(p.id, true);
+});
 $('#add').addEventListener('click', () => { readPool(); cfg.players.push({ id: `m${Date.now().toString(36)}`, name: '', provider: 'openrouter', model: '', effort: 'high', colour: PALETTE[cfg.players.length % PALETTE.length] }); renderPool(); });
 $('#narrator-on').addEventListener('change', renderKeys);
 $('#narrator-provider').addEventListener('change', renderKeys);

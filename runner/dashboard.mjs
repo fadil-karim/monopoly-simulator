@@ -12,6 +12,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROVIDERS, EFFORTS, listModels } from '../public/assets/app/providers.js';
+import { PRICES, modelName } from '../public/assets/app/pricing.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = {};
@@ -47,6 +48,15 @@ function writeEnvFile(vars) {
   writeFileSync(ENV, out.filter((l, i, a) => !(l === '' && i === a.length - 1)).join('\n') + '\n');
 }
 const readConfig = () => JSON.parse(readFileSync(existsSync(CONFIG) ? CONFIG : DEFAULT, 'utf8'));
+// The models a provider is known to serve before its catalogue is asked for: the adapter's list and the priced ones,
+// with the names people know them by; the page adds the provider's own catalogue once it has a key.
+function knownModels(id, p) {
+  const ids = new Set(p.models || []);
+  for (const key of Object.keys(PRICES)) if (key.startsWith(`${id}/`)) ids.add(key.slice(id.length + 1));
+  const names = {};
+  for (const m of ids) { const n = modelName(id, m); if (n && n !== m) names[m] = n; }
+  return { known: [...ids].sort(), names };
+}
 // The site of the default table, offered when the table in use leaves it blank.
 const defaultSite = () => { try { return JSON.parse(readFileSync(DEFAULT, 'utf8')).site || ''; } catch { return ''; } };
 
@@ -115,7 +125,7 @@ const server = http.createServer(async (req, res) => {
         running: !!state.child, startedAt: state.startedAt, games: state.games, exit: state.exit, log: state.log.slice(-250),
         config: readConfig(), configFile: existsSync(CONFIG) ? 'runner/config.json' : 'runner/config.default.json', defaultSite: defaultSite(),
         env: { SITE: env.SITE || '', RUNNER_TOKEN: env.RUNNER_TOKEN || '', keys },
-        providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, env: p.env || null, kind: p.kind, models: p.models || [], keyUrl: p.keyUrl || null })),
+        providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, env: p.env || null, kind: p.kind, models: p.models || [], keyUrl: p.keyUrl || null, ...knownModels(id, p) })),
         efforts: EFFORTS,
       });
     }
