@@ -1,8 +1,10 @@
 // Provider adapters. Every call goes straight to the provider's API with the
 // caller's own key: from the runner on the owner's machine, or from the Worker
 // for the narrator. Each adapter returns { text, usage, latencyMs, raw, request,
-// servedModel } or throws. `env` names the environment variable the runner
+// servedModel, reported } or throws; callModel adds the call's cost in dollars
+// and its source (pricing.js). `env` names the environment variable the runner
 // reads the key from.
+import { callCost, reportedCost } from './pricing.js';
 
 export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -207,7 +209,7 @@ function gate(providerId, limit) {
 }
 
 // ---------- main entry ----------
-// opts: { provider, model, effort, apiKey, baseUrl, system: [{text, cache}], user, maxTokens, temperature, timeoutMs, signal, concurrency }
+// opts: { provider, model, effort, apiKey, baseUrl, system: [{text, cache}], user, maxTokens, temperature, timeoutMs, signal, concurrency, price }
 export async function callModel(opts) {
   const provider = PROVIDERS[opts.provider] || PROVIDERS.custom;
   const g = gate(opts.provider, opts.concurrency || 8);
@@ -220,6 +222,8 @@ export async function callModel(opts) {
     else if (provider.kind === 'responses') out = await callResponses(opts, provider);
     else out = await callOpenAICompat(opts, provider);
     out.latencyMs = Date.now() - t0;
+    const c = callCost({ provider: opts.provider, model: opts.model, kind: provider.kind, usage: out.usage, reported: out.reported, price: opts.price });
+    out.cost = c.cost; out.costSource = c.source;
     return out;
   } finally {
     g.release();
@@ -363,6 +367,7 @@ async function callOpenAICompat(o, provider) {
       cached: (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) || 0,
       reasoning: (u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens) || null,
     },
+    reported: reportedCost(json),
     stopReason: choice ? choice.finish_reason : null,
   };
 }
@@ -409,6 +414,7 @@ async function callResponses(o, provider) {
       cached: (u.input_tokens_details && u.input_tokens_details.cached_tokens) || 0,
       reasoning: (u.output_tokens_details && u.output_tokens_details.reasoning_tokens) || null,
     },
+    reported: reportedCost(json),
     stopReason: json.status || null,
   };
 }

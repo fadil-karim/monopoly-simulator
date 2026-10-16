@@ -150,14 +150,18 @@ function finishPayload(game, result) {
     const ps = tracker.players[p.id] || tracker.blankPlayer();
     const mine = game.llmCalls.filter((c) => c.player === p.id);
     const served = {};
-    const calls = { n: mine.length, fallbacks: 0, errors: 0, illegal: illegal[p.id] || 0, latencyMs: 0, input: 0, output: 0, cached: 0, reasoning: 0, servedModels: served };
+    // cost: dollars over the calls that have one; reported and priced count the calls by where the figure came
+    // from; unpriced counts the calls that used tokens but whose model has no price on file.
+    const calls = { n: mine.length, fallbacks: 0, errors: 0, illegal: illegal[p.id] || 0, latencyMs: 0, input: 0, output: 0, cached: 0, reasoning: 0, servedModels: served, cost: 0, reported: 0, priced: 0, unpriced: 0 };
     for (const c of mine) {
       if (c.fallback) calls.fallbacks++;
       if (c.error) calls.errors++;
       calls.latencyMs += c.latencyMs || 0;
       if (c.usage) { calls.input += c.usage.input || 0; calls.output += c.usage.output || 0; calls.cached += c.usage.cached || 0; calls.reasoning += c.usage.reasoning || 0; }
       if (c.servedModel) served[c.servedModel] = (served[c.servedModel] || 0) + 1;
+      if (Number.isFinite(c.cost)) { calls.cost += c.cost; calls[c.costSource === 'reported' ? 'reported' : 'priced']++; } else if (c.usage) calls.unpriced++;
     }
+    calls.cost = Math.round(calls.cost * 1e8) / 1e8;
     return {
       id: p.id, rank: rankOf(p.id), finalCash: p.cash, finalNetWorth: p.bankrupt ? 0 : game.netWorth(p), bankrupt: p.bankrupt, bankruptRound: p.bankruptRound,
       stats: {
@@ -188,23 +192,27 @@ function finishPayload(game, result) {
     match: tracker.match, bankruptcies: game.players.filter((p) => p.bankrupt).length, housesBuilt: game.players.reduce((a, p) => a + p.stats.housesBuilt, 0), buildings,
     winner: winner ? { id: winner.id, name: winner.name, netWorth: winner.bankrupt ? 0 : game.netWorth(winner), cash: winner.cash } : null,
     props,
+    cost: { players: Math.round(playersOut.reduce((a, q) => a + q.stats.calls.cost, 0) * 1e8) / 1e8, narrator: null, total: null, unpriced: playersOut.reduce((a, q) => a + q.stats.calls.unpriced, 0) },
   };
+  summary.cost.total = summary.cost.players;
   return { result, finishedAt: new Date().toISOString(), durationMs: result.durationMs, summary, players: playersOut };
 }
 
+// The narrator's report, with what it cost: { text, cost, costSource, provider, model }, or null.
 async function writeRecap(game) {
   const n = cfg.narrator;
   if (!n || !n.provider || !keys[n.provider]) return null;
   try {
     const text = transcript(game, { compact: true, maxChars: n.maxChars || 150000 });
     const out = await callModel({
-      provider: n.provider, model: n.model, effort: n.effort || 'low', apiKey: keys[n.provider], baseUrl: baseUrls[n.provider],
+      provider: n.provider, model: n.model, effort: n.effort || 'low', apiKey: keys[n.provider], baseUrl: baseUrls[n.provider], price: n.price || null,
       system: [{ text: 'You write the match report for a Monopoly game played entirely by AI models, for readers who did not watch it. 150 to 250 words of plain British English prose, no bullet points, no headings. Name the players by their names, say how the game turned: the key purchases and trades, who went bankrupt and why, and how the winner won. Be specific about squares and sums; never invent anything the transcript does not show.', cache: false }],
       user: `THE GAME\n${text}\n\nWrite the match report.`, maxTokens: 1200, timeoutMs: 180000, plain: true, concurrency: 2,
     });
-    return out.text.trim() || null;
+    return { text: out.text.trim() || null, cost: out.cost, costSource: out.costSource, provider: n.provider, model: n.model };
   } catch (e) { console.warn(`  recap failed: ${e.message}`); return null; }
 }
+const usd = (x) => (!Number.isFinite(x) ? 'no price on file' : x === 0 ? '$0' : `$${x < 1 ? x.toFixed(4) : x.toFixed(2)}`);
 
 // ---------- playing ----------
 let runner = null;
@@ -226,7 +234,7 @@ async function runBatch(batchNo) {
     seed: args.seed != null ? Number(args.seed) : cfg.seed ?? '', keys, baseUrls,
     maxTokens: cfg.maxTokens || 4000, timeoutMs: (cfg.timeoutSeconds || 600) * 1000, apiConcurrency: cfg.apiConcurrency || 8, logPrompts: true,
   };
-  const stats = { calls: 0, fallbacks: 0, inTok: 0, outTok: 0 };
+  const stats = { calls: 0, fallbacks: 0, inTok: 0, outTok: 0, cost: 0 };
   runner = new Runner(setup, {
     async onGameStart(game) {
       const feed = new Feed(game);
@@ -251,15 +259,21 @@ async function runBatch(batchNo) {
     onLlm(rec, game) {
       stats.calls++; if (rec.fallback) stats.fallbacks++;
       if (rec.usage) { stats.inTok += rec.usage.input || 0; stats.outTok += rec.usage.output || 0; }
+      if (Number.isFinite(rec.cost)) stats.cost += rec.cost;
       const feed = feeds.get(game.id);
       if (feed) feed.push('calls', rec);
     },
     async onGameEnd(game, result) {
       const feed = feeds.get(game.id);
       if (feed) await feed.flush();
-      console.log(`■ ${game.id}: ${result.winnerName} wins after ${result.rounds} rounds (${result.endReason}); ${game.llmCalls.length} calls`);
       const payload = finishPayload(game, result);
-      payload.recap = await writeRecap(game);
+      console.log(`■ ${game.id}: ${result.winnerName} wins after ${result.rounds} rounds (${result.endReason}); ${game.llmCalls.length} calls, ${usd(payload.summary.cost.players)}`);
+      const recap = await writeRecap(game);
+      payload.recap = recap ? recap.text : null;
+      if (recap) {
+        payload.summary.narrator = { provider: recap.provider, model: recap.model, cost: Number.isFinite(recap.cost) ? recap.cost : null, costSource: recap.costSource };
+        if (Number.isFinite(recap.cost)) { payload.summary.cost.narrator = recap.cost; payload.summary.cost.total = Math.round((payload.summary.cost.players + recap.cost) * 1e8) / 1e8; stats.cost += recap.cost; }
+      }
       const local = { ...gameRecord(game, setup), finish: payload };
       try { writeFileSync(join(outDir, `${game.id}.json`), JSON.stringify(local)); } catch (e) { console.warn(`  could not write the local copy: ${e.message}`); }
       try { await post(`/api/ingest/games/${encodeURIComponent(game.id)}/finish`, payload); console.log(`  ${game.id} saved to the site`); }
@@ -267,7 +281,7 @@ async function runBatch(batchNo) {
       feeds.delete(game.id);
     },
     onDone(summary) {
-      console.log(`batch ${batchId}: ${summary.games} games in ${(summary.durationMs / 1000).toFixed(0)}s, ${stats.calls} calls (${stats.fallbacks} fallbacks), ${stats.inTok.toLocaleString()} in / ${stats.outTok.toLocaleString()} out tokens`);
+      console.log(`batch ${batchId}: ${summary.games} games in ${(summary.durationMs / 1000).toFixed(0)}s, ${stats.calls} calls (${stats.fallbacks} fallbacks), ${stats.inTok.toLocaleString()} in / ${stats.outTok.toLocaleString()} out tokens, ${usd(stats.cost)}`);
     },
   });
   await runner.run();

@@ -1,6 +1,27 @@
 // Small SVG charts for the statistics pages.
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Horizontal bars, one row an item, largest first: its label with a second line (`sub`) under it on the left, the
+// value at the end of its bar. It takes any number of rows and keeps every label whole.
+export function hbarChart(items, { width = 900, row = 36, valueLabel = (v) => v, labelWidth = 240 } = {}) {
+  const rows = [...items].sort((a, b) => b.value - a.value);
+  const padT = 4, padR = 80;
+  const height = padT * 2 + row * rows.length;
+  const max = Math.max(1e-9, ...rows.map((i) => i.value));
+  const span = width - labelWidth - padR;
+  let s = `<svg class="chart hbar" viewBox="0 0 ${width} ${height}" role="img">`;
+  rows.forEach((it, k) => {
+    const y = padT + k * row;
+    const w = Math.max(1, span * (it.value / max));
+    s += `<text class="lab" x="${labelWidth - 10}" y="${y + (it.sub ? 15 : 22)}" text-anchor="end">${esc(it.label)}</text>`;
+    if (it.sub) s += `<text class="sub" x="${labelWidth - 10}" y="${y + 29}" text-anchor="end">${esc(it.sub)}</text>`;
+    s += `<rect x="${labelWidth}" y="${y + 7}" width="${w.toFixed(1)}" height="${row - 14}" rx="2" fill="${esc(it.colour || '#ed1b24')}"><title>${esc(it.label)}${it.sub ? ' · ' + esc(it.sub) : ''}: ${esc(valueLabel(it.value))}</title></rect>`;
+    s += `<text class="val" x="${(labelWidth + w + 6).toFixed(1)}" y="${y + row / 2 + 4}">${esc(valueLabel(it.value))}</text>`;
+  });
+  s += `<line class="axis" x1="${labelWidth}" x2="${labelWidth}" y1="${padT}" y2="${height - padT}"/></svg>`;
+  return s;
+}
+
 export function barChart(items, { width = 900, height = 260, valueLabel = (v) => v, labelLength = 16 } = {}) {
   // items: [{label, value, colour}]; the labels turn when there are many bars
   const tilt = items.length > 8;

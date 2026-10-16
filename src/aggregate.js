@@ -70,6 +70,7 @@ export function aggregateModels(players) {
       rentCollected: 0, rentPaid: 0, bought: 0, auctionsWon: 0, trades: 0, housesBuilt: 0, jail: 0, messages: 0,
       madeTotal: 0, madeRent: 0, madeGo: 0, madeBank: 0, madePlayers: 0, paidTotal: 0,
       calls: 0, fallbacks: 0, illegal: 0, errors: 0, latencyMs: 0, input: 0, output: 0, cached: 0, reasoning: 0,
+      cost: 0, costGames: 0, costCalls: 0, reported: 0, unpriced: 0,
       rolls: new Array(13).fill(0), rollCount: 0, turns: 0,
     });
     a.games++;
@@ -85,6 +86,8 @@ export function aggregateModels(players) {
     a.madeTotal += inc.total || 0; a.madeRent += inc.rentTotal || 0; a.madeGo += inc.go || 0; a.madeBank += inc.bank || 0; a.madePlayers += inc.players || 0; a.paidTotal += inc.paidTotal || 0;
     a.calls += calls.n || 0; a.fallbacks += calls.fallbacks || 0; a.illegal += calls.illegal || 0; a.errors += calls.errors || 0; a.latencyMs += calls.latencyMs || 0;
     a.input += calls.input || 0; a.output += calls.output || 0; a.cached += calls.cached || 0; a.reasoning += calls.reasoning || 0;
+    // Games played before costs were kept carry no cost and are left out of the averages.
+    if (Number.isFinite(calls.cost)) { a.cost += calls.cost; a.costGames++; a.costCalls += calls.n || 0; a.reported += calls.reported || 0; a.unpriced += calls.unpriced || 0; }
     if (Array.isArray(st.rolls)) for (let t = 2; t <= 12; t++) a.rolls[t] += st.rolls[t] || 0;
     a.rollCount += st.rollCount || 0; a.turns += st.turns || 0;
   }
@@ -98,6 +101,8 @@ export function aggregateModels(players) {
       bankruptcies: a.bankrupt, bankruptRate: n ? a.bankrupt / n : 0, avgBankruptRound: avg(a.bankruptRoundSum, a.bankrupt),
       perGame: { rentCollected: avg(a.rentCollected, n), rentPaid: avg(a.rentPaid, n), bought: avg(a.bought, n), auctionsWon: avg(a.auctionsWon, n), trades: avg(a.trades, n), housesBuilt: avg(a.housesBuilt, n), jail: avg(a.jail, n), messages: avg(a.messages, n), made: avg(a.madeTotal, n), madeRent: avg(a.madeRent, n), madeGo: avg(a.madeGo, n), madeBank: avg(a.madeBank, n), madePlayers: avg(a.madePlayers, n), paid: avg(a.paidTotal, n), calls: avg(a.calls, n), turns: avg(a.turns, n) },
       calls: { n: a.calls, fallbacks: a.fallbacks, illegal: a.illegal, errors: a.errors, avgLatencyMs: a.calls ? Math.round(a.latencyMs / a.calls) : 0, input: a.input, output: a.output, cached: a.cached, reasoning: a.reasoning, avgInput: a.calls ? Math.round(a.input / a.calls) : 0, avgOutput: a.calls ? Math.round(a.output / a.calls) : 0 },
+      // A model whose calls have no price on file has no cost per game, rather than a cost of nothing.
+      cost: { total: Math.round(a.cost * 1e6) / 1e6, games: a.costGames, perGame: a.costGames && !(a.unpriced && !a.cost) ? Math.round((a.cost / a.costGames) * 1e6) / 1e6 : null, perCall: a.costCalls && !(a.unpriced && !a.cost) ? Math.round((a.cost / a.costCalls) * 1e8) / 1e8 : null, reported: a.reported, unpriced: a.unpriced },
       rolls: a.rolls, rollCount: a.rollCount, rollMean: a.rollCount ? Math.round((rollSum / a.rollCount) * 100) / 100 : null,
     };
   }).sort((x, y) => y.winRate - x.winRate || y.avgNetWorth - x.avgNetWorth);

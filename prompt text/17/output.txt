@@ -1,0 +1,41 @@
+I took your "ok" as the go-ahead, so v1.16 is released. Every game now shows what it cost, broken down by model and API, and the site creates its own database. One part couldn't be tested here: Cloudflare's own deploy creates the database, and I can't run that deploy from this container. If the Cloudflare build fails, or the runner still says the site has no database, send me what it says.
+
+**What each game cost.** Every model call is priced as it is made, and the dollar figure is kept with the call. OpenRouter and Perplexity report each call's cost in their reply. So GPT-6.1 Sol, Grok 4.7, Kimi K3, Nemotron 3 Ultra, MiMo-V2.6-Pro, Qwen3.8 Max and DeepSeek V4 Pro carry the figure their API reported. The others are priced from the tokens they used, at these list prices:
+
+| Model | API | Per million tokens, in / out |
+| --- | --- | --- |
+| Claude Opus 5.5 | Anthropic API | $4 / $20 |
+| Claude Sonnet 5.5, the narrator | Anthropic API | $2 / $10 |
+| Gemini 4 Argon | Gemini API | $2 / $10, then $4 / $20 from 1 December |
+
+Claude's prices come from Anthropic's reference. Gemini's come from price trackers, because Google's own page was unreachable from here, so check them against your first Google bill.
+
+Where it shows:
+- **Under every game,** a "What this game cost" card lists each seat's model by name, the API that served it, its calls, tokens, cost and share, then the narrator's report and the total. It follows the replay, so stepping back shows the cost up to that move.
+- **On each player card,** a line names the model and its API, with its cost so far.
+- **The games list** has a cost column.
+- **The model statistics** give each model's cost per game and in all, with a chart.
+
+A model the price list lacks shows "no price on file" rather than $0. Giving it a price in its entry in the config fixes that.
+
+**The database.** This release's deploy creates a database named monopoly-ai in your Cloudflare account and connects it to the site. The site lays out its own tables, so there are no commands to run. Your site address is now the default, and the dashboard fills it in.
+
+**Your one step is the runner's token.**
+1. In the Cloudflare dashboard, open the monopoly-simulator Worker, then Settings, then Variables and Secrets. Add a secret named RUNNER_TOKEN set to any long random string.
+2. On your Mac, stop the dashboard with Ctrl-C, then update it and start it again:
+
+```
+cd ~/monopoly-simulator
+git pull
+npm run dashboard
+```
+
+3. Put the same string in the token box, add your keys and press Start. The runner prints each game's cost as it ends.
+
+Verified before the push:
+- The deploy dry run binds the database.
+- A fresh local database got its tables from the site, a dozen simultaneous first requests included, and wrangler found nothing left to apply.
+- Two priced games ran against a stand-in for the four APIs, not the real ones. Their costs agree from each call to each player, each game, the games list and the model statistics.
+- The provider tests, now with cost checks, the simulator, the replay check, two bot games and the headless viewer suite all pass, with screenshots at desktop and phone widths.
+
+I also fixed the public games list, which returned a single game when asked without a limit.

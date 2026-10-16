@@ -1,5 +1,0 @@
-no, just make a dashboard open up to populate stuff and run with
-
-as an option*
-
-for when i run it locally

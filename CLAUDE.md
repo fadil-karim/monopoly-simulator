@@ -18,13 +18,13 @@ to production**.
 public/            everything served as assets
   index.html       the viewer: live, games, replay, Monopoly stats, model stats, about
   404.html
-  assets/app|style|fonts   app/ the modules (viewer, replay, stats, transcript, names, engine, board, heuristics, providers, ai, runner), style/site.css, fonts/jost.woff2 (OFL, the only font file)
+  assets/app|style|fonts   app/ the modules (viewer, replay, stats, transcript, names, engine, board, heuristics, providers, pricing, ai, runner, analytics), style/site.css, fonts/jost.woff2 (OFL, the only font file)
   _headers         security + caching headers (fonts immutable; app and style revalidated on every load, because the modules import each other by name)
   robots.txt
                    app/names.js the board editions (names by position, currencies) the viewer reads a game as
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
-migrations/        the D1 schema (games, game_players, events, llm_calls, asks), applied by the Worker itself on first use
+migrations/        the D1 schema (games, game_players, events, llm_calls, asks; 0002 the cost of each call), applied by the Worker itself on first use
 runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
@@ -104,6 +104,40 @@ record written. A new migration file is added to `MIGRATIONS` too. Without
 not set up yet. The owner's one step is the `RUNNER_TOKEN` secret, set once
 in the Worker's settings in the Cloudflare dashboard or with `wrangler secret
 put RUNNER_TOKEN`.
+
+What a game costs (`pricing.js`, shared by the runner, the Worker and the
+viewer): every model call is priced as it is made, in US dollars, and the
+figure kept with it (`llm_calls.cost`, `cost_source`), so a later change of
+price never rewrites an old game. `callModel` takes the cost the API reported
+(`reportedCost`: OpenRouter's `usage.cost`, Perplexity's
+`usage.cost.total_cost`), else prices the tokens (`callCost`, `tokenCost`)
+at the price in force on the day (`priceFor`: `PRICES`, keyed by
+`provider/model`, dollars per million tokens in dated `periods`, Gemini 4
+Argon's introductory rate ending on 30 November 2026), counting each API's
+tokens its own way (Anthropic's input apart from the cache reads and writes;
+Gemini's prompt including the cached tokens and its thinking billed as
+output; the OpenAI shapes including the cached tokens in the input and the
+reasoning in the output), or at a player's own `price` from the config
+(`narrator.price` for the narrator); a model with neither costs nothing on
+record and reads "no price on file". `ai.js` puts `cost` and `costSource` on
+each call record; the runner totals each player's (`stats.calls.cost`, with
+`reported`, `priced` and `unpriced` counts), the game's in the summary
+(`summary.cost`: `players`, `narrator`, `total`, `unpriced`; and
+`summary.narrator`: the narrator's model and cost) and prints them; the
+games list carries each game's `cost` (a finished game's total, a running
+game's calls so far, `costUnpriced`); `aggregateModels` gives each model a
+`cost` (`total`, `games`, `perGame`, `perCall`), leaving out games played
+before costs were kept and giving a model with no price no cost per game
+rather than a cost of nothing. The viewer names every model by name with
+the API that serves it (`modelName`, `apiName`): a line on each player card,
+the "What this game cost" card under the cards (`renderCost`, `seatCost`:
+each seat's calls, tokens, cost and share up to the move shown, the
+narrator's report at the end of a finished game; on a phone the API moves
+under the model and the cost stays in view), a cost column in the games
+list (a + where calls with no price were left out), and cost a game and in
+all in the model statistics with a chart of lying bars (`hbarChart`, any
+number of models, each label whole). A price changes by adding a period to
+`PRICES`, never by editing a past one.
 
 The viewer (`public/assets/app/viewer.js`) routes by hash: `#live` (the
 running game, following as events arrive, or the latest finished one; polls
@@ -310,3 +344,4 @@ no new prompt leaves the archive untouched.
 | v1.13 | DeepSeek V4 Pro takes a ninth seat | DeepSeek V4 Pro joins the table through OpenRouter as a ninth player rather than in place of anyone, so every model asked for is seated: Claude, Gemini, ChatGPT, Grok, Kimi, MiMo, Qwen, DeepSeek and Nemotron, in a random order every game. |
 | v1.14 | A pool of models, eight drawn to each table | Every game now seats up to eight models drawn at random from the pool in the config, never the same model twice, so the pool can grow past eight and no model ever plays against itself; a pool smaller than the seats plays whole. Qwen3.8 Max is back in the pool beside DeepSeek V4 Pro, so nine models take turns at the table of eight. |
 | v1.15 | A dashboard on your own machine to run the table | Running the games no longer needs a config file or a terminal full of flags: one command opens a page on your machine with the site, the token, a key box for every provider in the pool, the pool itself with each provider's catalogue a click away, the seats and the rest, and Start, Stop and the runner's progress, with the keys kept only for the run unless you choose to remember them. |
+| v1.16 | Each model's bill for every game, database included | Every game now shows what it cost, seat by seat: each model by name, the API that served it and the dollars its calls came to, with the game's total in the games list and each model's average cost a game in the model statistics. The site also creates its own database when it deploys and lays out its tables itself, so the only setup left is the runner's token, and the runner and its dashboard already know the site's address. |

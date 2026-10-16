@@ -223,6 +223,8 @@ body.board-full { overflow: hidden; }
 .pcard.bankrupt { opacity: .5; }
 .pcard .n { font-weight: 700; display: flex; justify-content: space-between; font-size: 15px; }
 .pcard .m { color: var(--muted); font-size: 11px; }
+.pcard .api { font-size: 12px; display: flex; flex-wrap: wrap; gap: 0 4px; margin-top: 2px; }
+.pcard .api .usd { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pcard .props { font-size: 11px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 3px; }
 .pcard .chip { display: inline-block; border-left: 8px solid var(--gc); padding: 1px 5px; background: var(--surface-2); border-radius: 3px; border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .pcard .chip i { font-style: normal; font-weight: 700; color: var(--accent); }
@@ -256,9 +258,27 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .table-wrap { overflow: auto; }
+/* what the game cost */
+.cost-card { margin-top: 14px; }
+table.cost td .muted { font-size: 11px; }
+table.cost tfoot td { border-bottom: 0; font-weight: 600; }
+table.cost tr.narr td { color: var(--muted); }
+table.cost .share { display: inline-block; width: 60px; height: 8px; margin-right: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 2px; vertical-align: middle; overflow: hidden; }
+table.cost .share i { display: block; height: 100%; background: var(--accent-2); }
+table.cost td:first-child { white-space: nowrap; }
+table.cost .phone-api { display: none; font-size: 12px; }
+/* on a phone the cost stays in view: the API moves under the model, and the calls, the tokens and the share give way */
+@media (max-width: 640px) {
+  table.cost th:nth-child(3), table.cost td:nth-child(3), table.cost th:nth-child(4), table.cost td:nth-child(4), table.cost th:nth-child(5), table.cost td:nth-child(5), table.cost th:nth-child(7), table.cost td:nth-child(7) { display: none; }
+  table.cost .phone-api { display: block; }
+}
 .chart { width: 100%; max-width: 900px; height: auto; margin: 8px 0 16px; display: block; }
 .chart text { font: 11px "Jost", sans-serif; fill: var(--muted); }
 .chart .axis { stroke: var(--line); }
+.chart text.sub { font-size: 10px; opacity: .8; }
+.chart text.lab { font-size: 13px; fill: var(--text); }
+.chart.hbar text.sub { font-size: 11px; }
+.chart.hbar text.val { font-size: 12px; fill: var(--text); }
 .chart .grid { stroke: var(--line); stroke-dasharray: 2 3; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; margin-bottom: 6px; }
 .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin-right: 5px; vertical-align: middle; }

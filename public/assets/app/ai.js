@@ -172,10 +172,11 @@ export class AIDecider {
       const out = await callModel({
         provider: pc.provider, model: pc.model, effort: pc.effort, apiKey: this.opt.keys[pc.provider], baseUrl: this.opt.baseUrls[pc.provider] || pc.baseUrl,
         system, user, maxTokens: this.opt.maxTokens, temperature: pc.temperature == null || pc.temperature === '' ? null : Number(pc.temperature),
-        timeoutMs: this.opt.timeoutMs, signal: this.opt.signal, concurrency: this.opt.concurrency,
+        timeoutMs: this.opt.timeoutMs, signal: this.opt.signal, concurrency: this.opt.concurrency, price: pc.price || null,
       });
       rec.latencyMs = out.latencyMs;
       rec.usage = out.usage;
+      rec.cost = out.cost; rec.costSource = out.costSource;
       rec.stopReason = out.stopReason;
       rec.servedModel = out.servedModel || null;
       rec.response = out.text;

@@ -6,8 +6,9 @@ import { HOTEL, SKYSCRAPER } from './engine.js';
 import { ReplayGame } from './replay.js';
 import { StatsTracker, EXPECTED_ROLLS, meanRoll } from './stats.js';
 import { fmtEvent, eventLine } from './transcript.js';
-import { barChart } from './analytics.js';
+import { barChart, hbarChart } from './analytics.js';
 import { NAME_SETS, nameSet, moneyIn, dressGame } from './names.js';
+import { modelName, apiName, fmtUsd } from './pricing.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -104,6 +105,7 @@ function showEmptyBoard(text) {
     <div class="cmid"><div class="mlogo"><span>MONOPOLY</span></div><div class="note">${esc(text || 'No game on the table')}</div></div>
     <div class="cbox"><div class="dice">🎲</div><div class="last">The next game appears here as soon as it starts.</div></div>`;
   $('#player-cards').innerHTML = '';
+  renderCost(null);
   clearFeeds();
   renderBar();
 }
@@ -157,7 +159,8 @@ function appendLlm(feed, c) {
   if (c.error) div.className = 'err';
   const p = V.game.player(c.player);
   const u = c.usage && c.usage.input != null ? ` ${c.usage.input}→${c.usage.output} tok${c.usage.cached ? ` (${c.usage.cached} cached)` : ''}` : '';
-  div.textContent = `${p ? p.name : c.player} · ${c.decision} · ${c.servedModel || c.model || ''}${c.effort ? '@' + c.effort : ''} · ${c.latencyMs} ms${u} · ${c.error ? 'ERROR ' + c.error : JSON.stringify(c.parsed)}`;
+  const cost = c.cost != null ? ` · ${fmtUsd(Number(c.cost))}` : '';
+  div.textContent = `${p ? p.name : c.player} · ${c.decision} · ${c.servedModel || c.model || ''}${c.effort ? '@' + c.effort : ''} · ${c.latencyMs} ms${u}${cost} · ${c.error ? 'ERROR ' + c.error : JSON.stringify(c.parsed)}`;
   feed.appendChild(div);
 }
 
@@ -165,7 +168,7 @@ let renderQueued = false;
 function queueRender() {
   if (renderQueued) return;
   renderQueued = true;
-  requestAnimationFrame(() => { renderQueued = false; fitBoard(); if (V.game) { renderBoard(V.game); renderPlayerCards(V.game); } renderBar(); });
+  requestAnimationFrame(() => { renderQueued = false; fitBoard(); if (V.game) { renderBoard(V.game); renderPlayerCards(V.game); renderCost(V.game); } renderBar(); });
 }
 // Once the face has loaded, the words are measured again and the board drawn again, so the labels are sized to Jost and not to the fallback face.
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { wordWidth.clear(); if (V.game) queueRender(); else if ($('#board .cell')) showEmptyBoard(emptyText); });
@@ -500,6 +503,7 @@ function rollChart(h, w, hh) {
 }
 function renderPlayerCards(game) {
   const wrap = $('#player-cards');
+  const anyCost = game.llmCalls.some((c) => c.costSource);
   const last = game.events[game.events.length - 1];
   const currentId = last ? last.player || last.from : null;
   const st = statsOf(game);
@@ -512,6 +516,7 @@ function renderPlayerCards(game) {
     return `<div class="pcard ${p.id === currentId ? 'current' : ''} ${p.bankrupt ? 'bankrupt' : ''}" style="--pc:${esc(meta.colour || '#888')}">
       <div class="n"><span><span class="dot" style="background:${esc(meta.colour || '#888')}"></span>${esc(p.name)}</span><span>${money(p.cash)}</span></div>
       <div class="m">${esc(modelLabel(meta))} · net ${money(p.bankrupt ? 0 : game.netWorth(p))}${p.inJail ? ' · in jail' : ''}${p.jailCards ? ' · ' + p.jailCards + ' jail card' : ''}${p.busTickets ? ' · ' + p.busTickets + ' bus ticket' : ''}${p.bankrupt ? ' · BANKRUPT' : ''} · ${p.stats.llmCalls} calls</div>
+      <div class="api"><b>${esc(modelName(meta.provider, meta.model))}</b> · ${esc(apiName(meta.provider))}<span class="usd">${esc(costText(seatCost(game, p.id), anyCost))}</span></div>
       <div class="props">${props || '<span class="none">no properties</span>'}</div>
       <div class="income">
         <div class="tot">Made <b>${money(ps.made.total)}</b> · paid <b>${money(ps.paid.total)}</b></div>
@@ -528,6 +533,53 @@ function renderPlayerCards(game) {
     </div>`;
   }).join('');
 }
+// ---- what the game cost ----
+// Each seat's calls up to the move shown: tokens and dollars, the dollars as the API reported them or priced from
+// the tokens at list price when the call was made (pricing.js). The narrator's report joins at the end.
+function seatCost(game, id) {
+  const s = { calls: 0, input: 0, output: 0, cost: 0, costed: 0, reported: 0, unpriced: 0 };
+  for (const c of game.llmCalls) {
+    if (c.player !== id) continue;
+    s.calls++;
+    const u = c.usage || {};
+    s.input += u.input || 0; s.output += u.output || 0;
+    if (c.cost != null && Number.isFinite(Number(c.cost))) { s.cost += Number(c.cost); s.costed++; if (c.costSource === 'reported') s.reported++; }
+    else if ((u.input || 0) + (u.output || 0) > 0) s.unpriced++;
+  }
+  return s;
+}
+// A game played before costs were kept has no cost on any call: its seats read as a dash, not as free.
+const costText = (s, any) => (!any && s.unpriced ? '–' : s.costed ? fmtUsd(s.cost) + (s.unpriced ? ` + ${s.unpriced} unpriced` : '') : s.unpriced ? 'no price on file' : '$0');
+const costHow = (s) => (!s.costed ? '' : s.reported === s.costed ? 'as the API reported' : s.reported ? 'reported and priced' : 'priced from tokens');
+function renderCost(game) {
+  const wrap = $('#cost-table');
+  if (!wrap) return;
+  if (!game) { wrap.innerHTML = ''; $('#cost-total').textContent = ''; return; }
+  const any = game.llmCalls.some((c) => c.costSource);
+  const called = game.llmCalls.length > 0;
+  const bots = game.players.every((p) => (p.meta || {}).provider === 'heuristic');
+  const rows = game.players.map((p) => ({ p, meta: p.meta || {}, s: seatCost(game, p.id) }));
+  const atEnd = V.meta && V.meta.status !== 'running' && V.cursor === V.events.length;
+  const narr = atEnd && V.meta.summary && V.meta.summary.narrator ? V.meta.summary.narrator : null;
+  const total = rows.reduce((a, r) => a + r.s.cost, 0) + (narr && Number.isFinite(narr.cost) ? narr.cost : 0);
+  const share = (x) => (total > 0 ? `<span class="share"><i style="width:${Math.round((x / total) * 100)}%"></i></span>${Math.round((x / total) * 100)}%` : '');
+  const body = rows.map(({ p, meta, s }) => `<tr>
+      <td><span class="dot" style="background:${esc(meta.colour || '#888')}"></span>${esc(p.name)}</td>
+      <td><b>${esc(modelName(meta.provider, meta.model))}</b><div class="muted">${esc(meta.provider === 'heuristic' ? 'plays by the rules, calls no model' : `${meta.model || ''}${meta.effort ? ' @' + meta.effort : ''}`)}</div><div class="phone-api">${esc(apiName(meta.provider))}</div></td>
+      <td>${esc(apiName(meta.provider))}${costHow(s) ? `<div class="muted">${esc(costHow(s))}</div>` : ''}</td>
+      <td class="num">${s.calls.toLocaleString()}</td>
+      <td class="num">${s.input.toLocaleString()} / ${s.output.toLocaleString()}</td>
+      <td class="num"><b>${esc(costText(s, any))}</b></td>
+      <td class="num">${share(s.cost)}</td>
+    </tr>`).join('');
+  const narrRow = narr ? `<tr class="narr"><td>Narrator</td><td><b>${esc(modelName(narr.provider, narr.model))}</b><div class="muted">${esc(narr.model || '')} · the match report</div><div class="phone-api">${esc(apiName(narr.provider))}</div></td><td>${esc(apiName(narr.provider))}${Number.isFinite(narr.cost) ? `<div class="muted">${narr.costSource === 'reported' ? 'as the API reported' : 'priced from tokens'}</div>` : ''}</td><td class="num">1</td><td class="num"></td><td class="num"><b>${esc(Number.isFinite(narr.cost) ? fmtUsd(narr.cost) : 'no price on file')}</b></td><td class="num">${Number.isFinite(narr.cost) ? share(narr.cost) : ''}</td></tr>` : '';
+  wrap.innerHTML = `<table class="cost"><thead><tr><th>Player</th><th>Model</th><th>API</th><th class="num">Calls</th><th class="num">Tokens in / out</th><th class="num">Cost</th><th class="num">Share</th></tr></thead>
+    <tbody>${body}${narrRow}</tbody>
+    <tfoot><tr><td>${atEnd ? 'The whole game' : 'To the move shown'}</td><td></td><td></td><td></td><td></td><td class="num"><b>${any || !called ? esc(fmtUsd(total)) : '–'}</b></td><td></td></tr></tfoot></table>
+    ${any ? '' : `<p class="muted">${called ? 'No costs were kept for this game: it was played before they were recorded, or none of its models has a price on file.' : bots ? 'Every seat is the rule-based bot, so the game called no model and cost nothing.' : 'No model has been called yet.'}</p>`}`;
+  $('#cost-total').textContent = any || !called ? `${fmtUsd(total)} ${atEnd ? 'in all' : V.live ? 'so far' : 'to this move'}` : '';
+}
+
 // Hover shows a property in the centre; a click keeps it there until clicked again.
 const boardEl = $('#board');
 function cellIndex(ev) { const c = ev.target.closest('.cell.prop'); return c ? Number(c.dataset.i) : null; }
@@ -587,7 +639,7 @@ boardEl.addEventListener('click', (ev) => {
 
 // ---------- the games list ----------
 let gamesOffset = 0;
-const playersCell = (g) => g.players.map((p) => `<span class="pchip" style="--pc:${esc(p.colour || '#888')}" title="${esc(modelLabel(p))}">${esc(p.name)}</span>`).join(' ');
+const playersCell = (g) => g.players.map((p) => `<span class="pchip" style="--pc:${esc(p.colour || '#888')}" title="${esc(`${modelName(p.provider, p.model)} · ${apiName(p.provider)} · ${modelLabel(p)}`)}">${esc(p.name)}</span>`).join(' ');
 async function loadGames(reset) {
   const wrap = $('#games-table');
   if (reset) { gamesOffset = 0; wrap.innerHTML = '<p class="muted">Loading…</p>'; }
@@ -601,8 +653,9 @@ async function loadGames(reset) {
       <td class="num">${g.rounds}</td>
       <td>${g.status === 'running' ? '<span class="status live">LIVE</span>' : g.status === 'finished' ? esc(g.winnerName || '') : esc(g.status)}</td>
       <td class="num">${(g.eventCount || g.lastSeq || 0).toLocaleString()}</td>
+      <td class="num"${g.costUnpriced ? ` title="${g.costUnpriced} call${g.costUnpriced === 1 ? '' : 's'} with no price on file, left out"` : ''}>${g.cost != null ? esc(fmtUsd(g.cost)) + (g.costUnpriced ? '+' : '') : '–'}</td>
     </tr>`).join('');
-    if (reset) wrap.innerHTML = `<table><thead><tr><th>Started</th><th>Game</th><th>Edition</th><th>Players</th><th class="num">Rounds</th><th>Winner</th><th class="num">Events</th></tr></thead><tbody id="games-body">${rows}</tbody></table>`;
+    if (reset) wrap.innerHTML = `<table><thead><tr><th>Started</th><th>Game</th><th>Edition</th><th>Players</th><th class="num">Rounds</th><th>Winner</th><th class="num">Events</th><th class="num">Cost</th></tr></thead><tbody id="games-body">${rows}</tbody></table>`;
     else $('#games-body').insertAdjacentHTML('beforeend', rows);
     gamesOffset += r.games.length;
     $('#games-count').textContent = `${r.total.toLocaleString()} game${r.total === 1 ? '' : 's'}`;
@@ -673,14 +726,16 @@ async function loadModels() {
     const colour = (m) => m.colour || '#8c8c8c';
     const name = (m) => m.name || m.model || m.provider;
     let html = `<div class="card"><div class="card-head"><h2>Every model's record</h2><span class="muted">over ${d.games.toLocaleString()} finished game${d.games === 1 ? '' : 's'}</span></div>
-      <div class="table-wrap"><table class="models"><thead><tr><th>Player</th><th>Provider · model · effort</th><th class="num">Games</th><th class="num">Wins</th><th class="num">Win rate</th><th class="num">Avg rank</th><th class="num">Avg net worth</th><th class="num">Bankrupt</th><th class="num">Avg bankrupt round</th><th class="num">Rent in / game</th><th class="num">Rent out / game</th><th class="num">Bought</th><th class="num">Auctions</th><th class="num">Trades</th><th class="num">Buildings</th><th class="num">Jail</th><th class="num">Said</th><th class="num">Calls / game</th><th class="num">Fallbacks</th><th class="num">Illegal</th><th class="num">Latency</th><th class="num">Tokens in / out per call</th><th class="num">Mean roll</th></tr></thead><tbody>
-      ${ms.map((m) => `<tr><td><span class="dot" style="background:${esc(colour(m))}"></span><b>${esc(name(m))}</b></td><td class="mk">${esc(m.provider)} · ${esc(m.model || '')}${m.effort ? ' @' + esc(m.effort) : ''}${Object.keys(m.servedModels).length ? `<div class="muted">served as ${esc(Object.keys(m.servedModels).join(', '))}</div>` : ''}</td><td class="num">${m.games}</td><td class="num">${m.wins}</td><td class="num">${pct(m.winRate)}</td><td class="num">${m.avgRank}</td><td class="num">${money(m.avgNetWorth)}</td><td class="num">${pct(m.bankruptRate)}</td><td class="num">${m.bankruptcies ? m.avgBankruptRound : '—'}</td><td class="num">${money(m.perGame.rentCollected)}</td><td class="num">${money(m.perGame.rentPaid)}</td><td class="num">${m.perGame.bought}</td><td class="num">${m.perGame.auctionsWon}</td><td class="num">${m.perGame.trades}</td><td class="num">${m.perGame.housesBuilt}</td><td class="num">${m.perGame.jail}</td><td class="num">${m.perGame.messages}</td><td class="num">${m.perGame.calls}</td><td class="num">${m.calls.fallbacks}</td><td class="num">${m.calls.illegal}</td><td class="num">${m.calls.n ? (m.calls.avgLatencyMs / 1000).toFixed(1) + ' s' : '—'}</td><td class="num">${m.calls.n ? `${m.calls.avgInput.toLocaleString()} / ${m.calls.avgOutput.toLocaleString()}` : '—'}</td><td class="num">${m.rollMean != null ? m.rollMean : '—'}</td></tr>`).join('')}
+      <div class="table-wrap"><table class="models"><thead><tr><th>Player</th><th>Model · API</th><th class="num">Games</th><th class="num">Wins</th><th class="num">Win rate</th><th class="num">Avg rank</th><th class="num">Avg net worth</th><th class="num">Bankrupt</th><th class="num">Avg bankrupt round</th><th class="num">Rent in / game</th><th class="num">Rent out / game</th><th class="num">Bought</th><th class="num">Auctions</th><th class="num">Trades</th><th class="num">Buildings</th><th class="num">Jail</th><th class="num">Said</th><th class="num">Calls / game</th><th class="num">Cost / game</th><th class="num">Cost in all</th><th class="num">Fallbacks</th><th class="num">Illegal</th><th class="num">Latency</th><th class="num">Tokens in / out per call</th><th class="num">Mean roll</th></tr></thead><tbody>
+      ${ms.map((m) => `<tr><td><span class="dot" style="background:${esc(colour(m))}"></span><b>${esc(name(m))}</b></td><td class="mk"><b>${esc(modelName(m.provider, m.model))}</b> · ${esc(apiName(m.provider))}<div class="muted">${esc(m.provider)} · ${esc(m.model || '')}${m.effort ? ' @' + esc(m.effort) : ''}</div>${Object.keys(m.servedModels).length ? `<div class="muted">served as ${esc(Object.keys(m.servedModels).join(', '))}</div>` : ''}</td><td class="num">${m.games}</td><td class="num">${m.wins}</td><td class="num">${pct(m.winRate)}</td><td class="num">${m.avgRank}</td><td class="num">${money(m.avgNetWorth)}</td><td class="num">${pct(m.bankruptRate)}</td><td class="num">${m.bankruptcies ? m.avgBankruptRound : '—'}</td><td class="num">${money(m.perGame.rentCollected)}</td><td class="num">${money(m.perGame.rentPaid)}</td><td class="num">${m.perGame.bought}</td><td class="num">${m.perGame.auctionsWon}</td><td class="num">${m.perGame.trades}</td><td class="num">${m.perGame.housesBuilt}</td><td class="num">${m.perGame.jail}</td><td class="num">${m.perGame.messages}</td><td class="num">${m.perGame.calls}</td><td class="num">${!m.cost || !m.cost.games ? '–' : m.cost.perGame == null ? 'no price on file' : esc(fmtUsd(m.cost.perGame)) + (m.cost.unpriced ? '+' : '')}</td><td class="num">${!m.cost || !m.cost.games ? '–' : m.cost.perGame == null ? '–' : esc(fmtUsd(m.cost.total)) + (m.cost.unpriced ? '+' : '')}</td><td class="num">${m.calls.fallbacks}</td><td class="num">${m.calls.illegal}</td><td class="num">${m.calls.n ? (m.calls.avgLatencyMs / 1000).toFixed(1) + ' s' : '—'}</td><td class="num">${m.calls.n ? `${m.calls.avgInput.toLocaleString()} / ${m.calls.avgOutput.toLocaleString()}` : '—'}</td><td class="num">${m.rollMean != null ? m.rollMean : '—'}</td></tr>`).join('')}
       </tbody></table></div>
-      <p class="muted">A model is identified by its provider, its exact model id and the effort it played with; "served as" is the model id the API itself reported back. Fallbacks are calls that failed or returned no usable JSON, so the rule-based player moved for that decision; illegal counts decisions the rules rejected.</p>
+      <p class="muted">A model is identified by its provider, its exact model id and the effort it played with; "served as" is the model id the API itself reported back. Fallbacks are calls that failed or returned no usable JSON, so the rule-based player moved for that decision; illegal counts decisions the rules rejected. Cost is in US dollars: what the API reported for each call (OpenRouter and Perplexity), else the call's tokens at the model's list price on the day; a game played before costs were kept is left out of the cost columns, and a + marks a figure that leaves out calls whose model has no price on file.</p>
     </div>`;
     html += `<div class="card"><h2>Win rate</h2>${barChart(ms.map((m) => ({ label: name(m), value: Math.round(m.winRate * 1000) / 10, colour: colour(m) })), { width: 900, height: 240, valueLabel: (v) => v + '%' })}</div>`;
     html += `<div class="card"><h2>Average final net worth</h2>${barChart(ms.map((m) => ({ label: name(m), value: m.avgNetWorth, colour: colour(m) })), { width: 900, height: 240, valueLabel: money })}</div>`;
     html += `<div class="card"><h2>Rent collected a game</h2>${barChart(ms.map((m) => ({ label: name(m), value: m.perGame.rentCollected, colour: colour(m) })), { width: 900, height: 240, valueLabel: money })}</div>`;
+    const costed = ms.filter((m) => m.cost && m.cost.perGame != null && m.calls.n);
+    if (costed.length) html += `<div class="card"><h2>What a game costs, model by model</h2>${hbarChart(costed.map((m) => ({ label: modelName(m.provider, m.model), sub: apiName(m.provider), value: m.cost.perGame, colour: colour(m) })), { valueLabel: (v) => fmtUsd(v) })}<p class="muted">The average cost of one game's calls for each model, in US dollars, over the games that kept costs.</p></div>`;
     if (ms.some((m) => m.calls.n)) html += `<div class="card"><h2>Seconds a decision</h2>${barChart(ms.filter((m) => m.calls.n).map((m) => ({ label: name(m), value: Math.round(m.calls.avgLatencyMs / 100) / 10, colour: colour(m) })), { width: 900, height: 240, valueLabel: (v) => v + ' s' })}</div>`;
     html += `<div class="card"><h2>Each model's dice</h2><div class="mini-rolls">${ms.map((m) => `<div class="mini" style="--pc:${esc(colour(m))}"><div class="k"><span class="dot" style="background:${esc(colour(m))}"></span>${esc(name(m))} · ${m.rollCount.toLocaleString()} rolls${m.rollMean != null ? ` · mean ${m.rollMean}` : ''}</div>${rollChart(m.rolls, 200, 60)}</div>`).join('')}</div></div>`;
     el.innerHTML = html;

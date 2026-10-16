@@ -8,6 +8,7 @@ import { transcript } from '../public/assets/app/transcript.js';
 import { callModel } from '../public/assets/app/providers.js';
 import { aggregateMonopoly, aggregateModels } from './aggregate.js';
 import schema0001 from '../migrations/0001_init.sql';
+import schema0002 from '../migrations/0002_cost.sql';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization' };
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...CORS, ...headers } });
@@ -75,7 +76,7 @@ async function route(request, env, ctx, url) {
 // and under the file's name, so either can run them and each sees what the other has done. A migration runs as
 // one batch with its record, so it lands whole or not at all; when two isolates race on the same one, the
 // loser's batch rolls back and it finds the record written. A new file in migrations/ is added here too.
-const MIGRATIONS = [['0001_init.sql', schema0001]];
+const MIGRATIONS = [['0001_init.sql', schema0001], ['0002_cost.sql', schema0002]];
 let schemaReady = false;
 async function ensureSchema(db) {
   if (schemaReady) return;
@@ -189,7 +190,20 @@ async function listGames(env, url) {
   const total = await env.DB.prepare(`SELECT COUNT(*) AS n FROM games ${where}`).bind(...args).first();
   const { results } = await env.DB.prepare(`SELECT * FROM games ${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`).bind(...args, limit, offset).all();
   const players = await playersFor(env, results.map((g) => g.id));
-  const games = results.map((g) => { const row = gameRow(g); delete row.summary; delete row.recap; delete row.config; return { ...row, players: players[g.id] || [] }; });
+  // What each game cost: a finished game's total from its summary, a running one's calls so far.
+  const running = results.filter((g) => g.status === 'running').map((g) => g.id);
+  const sofar = {};
+  if (running.length) {
+    const { results: sums } = await env.DB.prepare(`SELECT game_id, SUM(cost) AS cost FROM llm_calls WHERE game_id IN (${running.map(() => '?').join(',')}) GROUP BY game_id`).bind(...running).all();
+    for (const r of sums) sofar[r.game_id] = r.cost;
+  }
+  const games = results.map((g) => {
+    const row = gameRow(g);
+    const sc = row.summary && row.summary.cost;
+    const cost = g.status === 'running' ? sofar[g.id] ?? null : sc ? sc.total : null;
+    delete row.summary; delete row.recap; delete row.config;
+    return { ...row, cost: cost == null ? null : Math.round(cost * 1e8) / 1e8, costUnpriced: (sc && sc.unpriced) || 0, players: players[g.id] || [] };
+  });
   return json({ games, total: total ? total.n : games.length, limit, offset }, 200, { 'cache-control': 'public, max-age=10' });
 }
 async function getGame(env, id) {
@@ -213,6 +227,7 @@ function callRow(c, full) {
   const out = {
     seq: c.seq, round: c.round, turn: c.turn, player: c.player, decision: c.decision, provider: c.provider, model: c.model, effort: c.effort, servedModel: c.served_model,
     latencyMs: c.latency_ms, usage: { input: c.input_tokens, output: c.output_tokens, cached: c.cached_tokens, reasoning: c.reasoning_tokens },
+    cost: c.cost ?? null, costSource: c.cost_source || null,
     error: c.error, fallback: !!c.fallback, stopReason: c.stop_reason, parsed: parse(c.parsed),
   };
   if (full) { out.response = c.response; out.prompt = c.prompt; out.system = parse(c.system); }
@@ -336,11 +351,13 @@ async function ingestCalls(env, id, b) {
   for (let k = 0; k < calls.length; k += 40) {
     const stmts = calls.slice(k, k + 40).map((c) => {
       const u = c.usage || {};
-      return env.DB.prepare(`INSERT OR IGNORE INTO llm_calls (game_id, seq, round, turn, player, decision, provider, model, effort, served_model, latency_ms, input_tokens, output_tokens, cached_tokens, reasoning_tokens, error, fallback, stop_reason, parsed, response, prompt, system)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      const cost = Number.isFinite(c.cost) ? c.cost : null;
+      return env.DB.prepare(`INSERT OR IGNORE INTO llm_calls (game_id, seq, round, turn, player, decision, provider, model, effort, served_model, latency_ms, input_tokens, output_tokens, cached_tokens, reasoning_tokens, error, fallback, stop_reason, parsed, response, prompt, system, cost, cost_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(id, c.seq, c.round ?? null, c.turn ?? null, c.player, c.decision || '', c.provider || null, c.model || null, c.effort || null, c.servedModel || null,
           c.latencyMs ?? null, u.input ?? null, u.output ?? null, u.cached ?? null, u.reasoning ?? null, c.error || null, c.fallback ? 1 : 0, c.stopReason || null,
-          c.parsed != null ? JSON.stringify(c.parsed) : null, c.response != null ? String(c.response).slice(0, 20000) : null, c.user != null ? String(c.user) : null, c.system != null ? JSON.stringify(c.system) : null);
+          c.parsed != null ? JSON.stringify(c.parsed) : null, c.response != null ? String(c.response).slice(0, 20000) : null, c.user != null ? String(c.user) : null, c.system != null ? JSON.stringify(c.system) : null,
+          cost, cost == null ? null : (c.costSource === 'reported' ? 'reported' : 'priced'));
     });
     await env.DB.batch(stmts);
   }

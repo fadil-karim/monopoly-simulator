@@ -1,0 +1,9 @@
+```
+started: node runner/run.mjs --config /Users/cohiba/monopoly-simulator/runner/config.json --games 1 --seats 8 --edition standard
+runner: no site: set "site" in the config, SITE in the environment or --site
+runner stopped with code 1
+```
+
+https://monopoly.basilicalabs.ai/
+
+ok, also, implement the cost of each game per model. state the model and its api provider

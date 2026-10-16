@@ -103,10 +103,10 @@ decision and is counted as a fallback.
   Builds on every push to `main`. There is nothing to start: the Worker
   serves the viewer and answers `/api/*`.
 - **The data** lives in Cloudflare D1, a SQLite database bound to the Worker
-  (`migrations/` holds its schema: games, seats, events, model calls). The
-  deploy creates the database and binds it, and the Worker lays out its
-  tables the first time it reaches it. The runner writes into it through the
-  API as a game is played; viewers read from it.
+  (`migrations/` holds its schema: games, seats, events, model calls and what
+  each call cost). The deploy creates the database and binds it, and the
+  Worker lays out its tables the first time it reaches it. The runner writes
+  into it through the API as a game is played; viewers read from it.
 - **The games** are played by `runner/run.mjs`, a Node program you run on
   any machine that holds your API keys: your laptop, a VPS, a cron job. It
   needs Node 20 or later, the keys in `runner/.env`, and the site's address
@@ -194,18 +194,44 @@ with Ctrl-C: the uploads finish and running games are marked aborted.
 Prompts are not stored unless `"logPrompts": true` (or `--log-prompts`); the
 reply, the parsed decision, latency and tokens always are.
 
+### What a game costs
+
+Every model call is priced as it is made, in US dollars, and the figure is
+kept with the call: the cost the API reported with the reply where it reports
+one (OpenRouter and Perplexity do), otherwise the call's tokens at the
+model's list price on the day, from `public/assets/app/pricing.js` (Claude
+Opus 5.5 and Sonnet 5.5 on the Anthropic API, Gemini 4 Argon on Google's,
+with its introductory rate to the end of November 2026, and stand-in prices
+for the models Perplexity and OpenRouter serve). The runner prints each
+game's cost and the batch's; each player's total goes into its statistics
+and the game's, with the narrator's report, into the summary; the site shows
+each seat's model, the API that served it and its cost under every game,
+following the replay, a cost column in the games list, and each model's cost
+a game in the model statistics. A model the price list lacks costs nothing
+on record and reads "no price on file" until it is added to `pricing.js` or
+its player in the config carries a price, in dollars per million tokens:
+
+```json
+{ "id": "glm", "name": "GLM", "provider": "zhipu", "model": "glm-5", "price": { "input": 1.2, "output": 4.8, "cachedInput": 0.12 } }
+```
+
+A price change is a new period in `pricing.js`; a game keeps the cost its
+calls were recorded with.
+
 ## The API
 
 Public, read-only, JSON unless noted:
 
 - `GET /api/live`: the games running now and the latest finished one.
 - `GET /api/health`: whether the site has its database and the runner's token.
-- `GET /api/games?limit=50&offset=0&status=finished`: the list, newest first.
+- `GET /api/games?limit=50&offset=0&status=finished`: the list, newest first,
+  with each game's `cost` in dollars (a running game's calls so far).
 - `GET /api/games/<id>`: the game with its players, result, summary and recap.
 - `GET /api/games/<id>/events?after=0&limit=1000`: the event log, paged by
   sequence number (poll with `after` to follow a running game).
-- `GET /api/games/<id>/calls?after=0&limit=500&full=1`: the model calls;
-  `full=1` adds the reply text and, when logged, the prompts.
+- `GET /api/games/<id>/calls?after=0&limit=500&full=1`: the model calls,
+  each with its `cost` and `costSource` (`reported` or `priced`); `full=1`
+  adds the reply text and, when logged, the prompts.
 - `GET /api/games/<id>/transcript?compact=1`: the game as plain text.
 - `GET /api/games/<id>/export?full=1`: everything as one JSON file.
 - `GET /api/stats/monopoly`, `GET /api/stats/models`: the aggregates.
@@ -233,7 +259,7 @@ then open http://127.0.0.1:8789 (or whatever port wrangler prints).
 npm run simulate           # bot games: invariants and the illegal-action count
 npm run check:replay       # the replay reducer against the engine, every event
 npm run check              # wrangler deploy --dry-run
-node scripts/check-providers.mjs # the provider adapters against a mock: the Responses shape, the chat shape, the retry without knobs
+node scripts/check-providers.mjs # the provider adapters against a mock: the four API shapes, the retry without knobs, what each call costs
 node scripts/verify-viewer.mjs   # the viewer in headless Chromium against the local Worker
 ```
 
@@ -249,7 +275,8 @@ public/
   assets/app/stats.js         live match, player and property statistics from the event log
   assets/app/transcript.js    one line per event; the plain-text transcript
   assets/app/names.js         the board editions: names by position and currencies
-  assets/app/analytics.js     SVG bar chart
+  assets/app/analytics.js     SVG bar charts, upright and lying
+  assets/app/pricing.js       what a call costs: the price list, the APIs' names, the reported cost
   assets/app/board.js         boards, groups, cards
   assets/app/engine.js        game rules and event log (shared with the runner)
   assets/app/heuristics.js    rule-based decisions and fallbacks
@@ -260,6 +287,7 @@ public/
 src/worker.js                the Worker: /api/* over D1, assets for the rest
 src/aggregate.js             the statistics aggregations
 migrations/0001_init.sql     the schema
+migrations/0002_cost.sql     the cost of each call (the Worker applies both itself)
 runner/run.mjs               plays games and streams them to the site
 runner/dashboard.mjs         the local dashboard (with dashboard.html): the table, the keys, start and stop
 runner/config.default.json   the default table: the pool of models and the seats
