@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monopoly AI · runner dashboard</title>
+<style>
+  :root { --bg: #efe8d0; --paper: #fdfbf2; --ink: #1f1c17; --muted: #6b665a; --line: #cfc7ad; --red: #ed1b24; --green: #1fb25a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--paper); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  header .logo { background: var(--red); color: #fff; font-weight: 800; letter-spacing: .08em; padding: 3px 12px; border-radius: 4px; transform: rotate(-3deg); border: 2px solid var(--ink); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .status { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; background: var(--line); }
+  .pill.on { background: var(--green); color: #fff; }
+  main { max-width: 1180px; margin: 0 auto; padding: 18px 22px 60px; display: grid; gap: 16px; }
+  section { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  section h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 14px; }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  label.row { grid-template-columns: auto 1fr; align-items: center; gap: 8px; color: var(--ink); }
+  input, select, textarea { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); width: 100%; }
+  input[type=checkbox] { width: auto; }
+  textarea { min-height: 64px; resize: vertical; }
+  .keyrow { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .keyrow label { grid-template-columns: 1fr; }
+  .key { display: flex; gap: 6px; }
+  .key button { white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 4px 6px; }
+  td { padding: 4px 6px; vertical-align: middle; }
+  td input, td select { padding: 5px 7px; }
+  td.colour input { padding: 2px; height: 32px; width: 46px; }
+  button { font: inherit; font-weight: 600; padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); cursor: pointer; }
+  button:hover { border-color: var(--red); }
+  button.primary { background: var(--red); border-color: var(--red); color: #fff; }
+  button.small { padding: 4px 9px; font-size: 12px; }
+  button[disabled] { opacity: .45; cursor: default; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .actions .note { color: var(--muted); font-size: 13px; }
+  pre.log { background: #1a1d1a; color: #e8e2cc; padding: 12px 14px; border-radius: 8px; max-height: 360px; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 10px 0 0; white-space: pre-wrap; }
+  pre.log .win { color: #7ee2a0; font-weight: 700; }
+  pre.log .warn { color: #ffb86b; }
+  a { color: var(--red); }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">MONOPOLY</span>
+  <h1>Runner dashboard <span style="color:var(--muted);font-weight:400">· local</span></h1>
+  <div class="status"><span id="games" class="hint"></span><span id="pill" class="pill">idle</span></div>
+</header>
+<main>
+  <section>
+    <h2>The site and the table</h2>
+    <div class="grid">
+      <label>Site <input id="site" placeholder="https://monopoly-simulator.YOUR-ACCOUNT.workers.dev"></label>
+      <label>Runner token <span class="key"><input id="token" type="password" placeholder="the RUNNER_TOKEN secret"><button class="small" type="button" data-show="token">show</button></span></label>
+      <label>Edition <select id="edition"><option value="standard">London (standard)</option><option value="mega">London Mega</option></select></label>
+      <label>Seats a game <input id="seats" type="number" min="2" max="12" step="1"></label>
+      <label>Games a batch <input id="games-n" type="number" min="1" step="1"></label>
+      <label>Pause between games (seconds) <input id="pause" type="number" min="0" step="1"></label>
+      <label>Round limit (blank: play to the end) <input id="rounds" type="number" min="1" step="1"></label>
+      <label>Pause before every turn (ms, to watch bots) <input id="delay" type="number" min="0" step="50" placeholder="0"></label>
+    </div>
+    <div class="actions" style="margin-top:10px">
+      <label class="row"><input id="loop" type="checkbox"> Keep playing batch after batch</label>
+      <label class="row"><input id="dry" type="checkbox"> Dry run: play without uploading</label>
+    </div>
+  </section>
+
+  <section>
+    <h2>Keys</h2>
+    <div id="keys" class="keyrow"></div>
+    <div class="actions" style="margin-top:10px">
+      <label class="row"><input id="remember" type="checkbox"> Remember the site, the token and the keys in runner/.env</label>
+      <span class="note">Unticked, they are handed to the runner for this run only. A seat without a key plays as the rule-based bot.</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>The pool of models</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Provider</th><th>Model id</th><th>Effort</th><th>Colour</th><th></th></tr></thead>
+      <tbody id="pool"></tbody>
+    </table>
+    <div class="actions" style="margin-top:10px">
+      <button type="button" id="add">+ Add a model</button>
+      <span class="note">Every game seats the number above, drawn at random, never the same model twice. The catalogue button lists what a provider serves to your key.</span>
+    </div>
+    <datalist id="catalogue"></datalist>
+  </section>
+
+  <section>
+    <h2>Instructions and the narrator</h2>
+    <label>Universal instructions, given to every player <textarea id="universal"></textarea></label>
+    <div class="grid" style="margin-top:10px">
+      <label class="row"><input id="narrator-on" type="checkbox"> Narrator writes the match report</label>
+      <label>Narrator provider <select id="narrator-provider"></select></label>
+      <label>Narrator model <input id="narrator-model"></label>
+      <label>Narrator effort <select id="narrator-effort"></select></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>Run</h2>
+    <div class="actions">
+      <button type="button" id="save">Save</button>
+      <button type="button" id="start" class="primary">Start</button>
+      <button type="button" id="stop" disabled>Stop</button>
+      <a id="live" href="#" target="_blank" rel="noopener">Open the site's Live tab</a>
+      <span id="msg" class="note"></span>
+    </div>
+    <pre id="log" class="log">Nothing running.</pre>
+    <p class="hint">Save writes the table to runner/config.json, which the runner prefers from then on; Start saves and runs. Stop finishes the uploads and marks a running game aborted.</p>
+  </section>
+</main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let S = null, cfg = null, keys = {};
+const PALETTE = ['#d97757', '#4285f4', '#10a37f', '#111111', '#7c3aed', '#ff6900', '#0ea5e9', '#4d6bfe', '#76b900', '#fbbf24', '#e11d48', '#8b5a2b'];
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function providerOptions(sel) { return S.providers.filter((p) => p.id !== sel || true).map((p) => `<option value="${esc(p.id)}" ${p.id === sel ? 'selected' : ''}>${esc(p.label)}</option>`).join(''); }
+function effortOptions(sel) { return ['', ...S.efforts].map((e) => `<option value="${esc(e)}" ${e === (sel || '') ? 'selected' : ''}>${e || 'default'}</option>`).join(''); }
+function poolRow(p, i) {
+  return `<tr data-i="${i}">
+    <td><input class="name" value="${esc(p.name || '')}" placeholder="Name"></td>
+    <td><select class="provider">${providerOptions(p.provider)}</select></td>
+    <td style="display:flex;gap:6px"><input class="model" list="catalogue" value="${esc(p.model || '')}" placeholder="model id"><button type="button" class="small cat" title="list what this provider serves to your key">catalogue</button></td>
+    <td><select class="effort">${effortOptions(p.effort)}</select></td>
+    <td class="colour"><input type="color" class="col" value="${esc(p.colour || PALETTE[i % PALETTE.length])}"></td>
+    <td><button type="button" class="small del" title="remove">✕</button></td>
+  </tr>`;
+}
+function renderPool() {
+  $('#pool').innerHTML = cfg.players.map(poolRow).join('');
+  renderKeys();
+}
+function usedProviders() {
+  const ids = new Set(cfg.players.map((p) => p.provider));
+  if ($('#narrator-on').checked) ids.add($('#narrator-provider').value);
+  return S.providers.filter((p) => ids.has(p.id) && p.env);
+}
+function renderKeys() {
+  const used = usedProviders();
+  const seen = new Set();
+  $('#keys').innerHTML = used.filter((p) => !seen.has(p.env) && seen.add(p.env)).map((p) => `<label>${esc(p.label)} · ${esc(p.env)}${p.keyUrl ? ` · <a href="${esc(p.keyUrl)}" target="_blank" rel="noopener">get a key</a>` : ''}
+    <span class="key"><input type="password" data-env="${esc(p.env)}" value="${esc(keys[p.env] || '')}" placeholder="${esc(p.env)}" autocomplete="off"><button class="small" type="button" data-show>show</button></span></label>`).join('') || '<span class="hint">No provider in the pool needs a key.</span>';
+}
+function readPool() {
+  cfg.players = [...$('#pool').querySelectorAll('tr')].map((tr, i) => {
+    const old = cfg.players[i] || {};
+    return { ...old, id: old.id || slug($('.name', tr).value) || `p${i + 1}`, name: $('.name', tr).value.trim(), provider: $('.provider', tr).value, model: $('.model', tr).value.trim(), effort: $('.effort', tr).value, colour: $('.col', tr).value };
+  });
+}
+const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+function readKeys() { keys = {}; for (const inp of $('#keys').querySelectorAll('input[data-env]')) keys[inp.dataset.env] = inp.value.trim(); }
+function gather() {
+  readPool(); readKeys();
+  cfg.site = $('#site').value.trim();
+  cfg.seats = Number($('#seats').value) || 8;
+  cfg.games = Number($('#games-n').value) || 1;
+  cfg.pauseBetweenGamesMs = Math.max(0, Number($('#pause').value) || 0) * 1000;
+  cfg.universal = $('#universal').value;
+  cfg.config = { ...(cfg.config || {}), edition: $('#edition').value, maxRounds: $('#rounds').value ? Number($('#rounds').value) : null };
+  cfg.narrator = $('#narrator-on').checked ? { provider: $('#narrator-provider').value, model: $('#narrator-model').value.trim(), effort: $('#narrator-effort').value } : null;
+  const env = { SITE: cfg.site, RUNNER_TOKEN: $('#token').value.trim(), ...keys };
+  const options = { loop: $('#loop').checked, dry: $('#dry').checked, games: cfg.games, seats: cfg.seats, edition: cfg.config.edition, maxRounds: cfg.config.maxRounds || 0, delay: Number($('#delay').value) || 0 };
+  return { config: cfg, env, options, remember: $('#remember').checked };
+}
+function fill() {
+  cfg = S.config; keys = { ...S.env.keys };
+  $('#site').value = S.env.SITE || cfg.site || '';
+  $('#token').value = S.env.RUNNER_TOKEN || '';
+  $('#edition').value = (cfg.config && cfg.config.edition) || 'standard';
+  $('#seats').value = cfg.seats || 8;
+  $('#games-n').value = cfg.games || 1;
+  $('#pause').value = Math.round((cfg.pauseBetweenGamesMs || 0) / 1000);
+  $('#rounds').value = cfg.config && cfg.config.maxRounds ? cfg.config.maxRounds : '';
+  $('#universal').value = cfg.universal || '';
+  $('#narrator-provider').innerHTML = providerOptions((cfg.narrator && cfg.narrator.provider) || 'anthropic');
+  $('#narrator-effort').innerHTML = effortOptions(cfg.narrator && cfg.narrator.effort);
+  $('#narrator-model').value = (cfg.narrator && cfg.narrator.model) || '';
+  $('#narrator-on').checked = !!cfg.narrator;
+  $('#remember').checked = !!(S.env.SITE || Object.keys(S.env.keys).length);
+  renderPool();
+  $('#msg').textContent = `Table read from ${S.configFile}.`;
+}
+function renderRun() {
+  $('#pill').textContent = S.running ? 'running' : 'idle';
+  $('#pill').classList.toggle('on', S.running);
+  $('#start').disabled = S.running; $('#stop').disabled = !S.running;
+  $('#games').textContent = S.startedAt ? `${S.games} game${S.games === 1 ? '' : 's'} finished this run` : '';
+  const log = $('#log');
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.innerHTML = S.log.length ? S.log.map((l) => `<span class="${/^■ /.test(l) ? 'win' : /^! |error|failed/i.test(l) ? 'warn' : ''}">${esc(l)}</span>`).join('\n') : 'Nothing running.';
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  const site = $('#site').value.trim().replace(/\/$/, '');
+  $('#live').href = site ? site + '/#live' : '#';
+}
+async function refresh(full) {
+  const s = await api('/api/state');
+  const first = !S;
+  S = { ...(S || {}), ...s, config: S && !full ? S.config : s.config };
+  if (first || full) fill();
+  renderRun();
+}
+$('#pool').addEventListener('click', async (e) => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  if (e.target.classList.contains('del')) { readPool(); cfg.players.splice(Number(tr.dataset.i), 1); renderPool(); }
+  if (e.target.classList.contains('cat')) {
+    readKeys();
+    const provider = $('.provider', tr).value, p = S.providers.find((x) => x.id === provider);
+    e.target.disabled = true; $('#msg').textContent = `Asking ${p ? p.label : provider} for its catalogue…`;
+    try { const r = await api('/api/models', { provider, key: keys[p && p.env] || '' }); $('#catalogue').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join(''); $('#msg').textContent = `${r.models.length} models listed; pick from the model box.`; $('.model', tr).focus(); }
+    catch (err) { $('#msg').textContent = `Catalogue: ${err.message}`; }
+    e.target.disabled = false;
+  }
+});
+$('#pool').addEventListener('change', (e) => { if (e.target.classList.contains('provider')) { readPool(); renderKeys(); } });
+$('#add').addEventListener('click', () => { readPool(); cfg.players.push({ id: `m${Date.now().toString(36)}`, name: '', provider: 'openrouter', model: '', effort: 'high', colour: PALETTE[cfg.players.length % PALETTE.length] }); renderPool(); });
+$('#narrator-on').addEventListener('change', renderKeys);
+$('#narrator-provider').addEventListener('change', renderKeys);
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-show]'); if (!b) return;
+  const inp = b.dataset.show ? $('#' + b.dataset.show) : b.previousElementSibling;
+  inp.type = inp.type === 'password' ? 'text' : 'password'; b.textContent = inp.type === 'password' ? 'show' : 'hide';
+});
+$('#save').addEventListener('click', async () => {
+  try { const g = gather(); const r = await api('/api/save', g); $('#msg').textContent = `Saved to ${r.configFile}${r.envWritten ? ' and runner/.env' : ''}.`; }
+  catch (err) { $('#msg').textContent = `Save failed: ${err.message}`; }
+});
+$('#start').addEventListener('click', async () => {
+  try { const g = gather(); await api('/api/start', g); $('#msg').textContent = 'Runner started.'; await refresh(false); }
+  catch (err) { $('#msg').textContent = `Start failed: ${err.message}`; }
+});
+$('#stop').addEventListener('click', async () => { await api('/api/stop', {}); $('#msg').textContent = 'Stopping: the uploads finish first.'; });
+$('#site').addEventListener('input', renderRun);
+refresh(true).catch((e) => { $('#msg').textContent = e.message; });
+setInterval(() => refresh(false).catch(() => {}), 1500);
+</script>
+</body>
+</html>

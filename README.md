@@ -139,7 +139,23 @@ decision and is counted as a fallback.
 
 ## Running the games
 
-On the machine that holds the keys:
+On the machine that holds the keys, the easy way is the dashboard:
+
+```bash
+npm run dashboard        # or: node runner/run.mjs --dashboard
+```
+
+It opens a page on 127.0.0.1 (port 8788; `--port` changes it, `--no-open`
+skips the browser) with the site, the runner token, a key box for every
+provider in the pool, the pool itself (add, remove, pick a model from the
+provider's catalogue), the seats, the edition, the games a batch, the
+loop, a dry run, the instructions and the narrator. Save writes the table
+to `runner/config.json`; Start saves and runs the runner, showing its
+progress, the games finished and a link to the site's Live tab; Stop
+finishes the uploads and marks a running game aborted. The keys are
+handed to the runner for the run only, unless "remember" writes them to
+`runner/.env`. Both files are ignored by git. The command line does the
+same without the page:
 
 ```bash
 cat > runner/.env <<'ENV'
@@ -242,6 +258,7 @@ src/worker.js                the Worker: /api/* over D1, assets for the rest
 src/aggregate.js             the statistics aggregations
 migrations/0001_init.sql     the schema
 runner/run.mjs               plays games and streams them to the site
+runner/dashboard.mjs         the local dashboard (with dashboard.html): the table, the keys, start and stop
 runner/config.default.json   the default table: the pool of models and the seats
 runner/config.bots.json      rule-based players, for local tests
 scripts/simulate.mjs         headless engine check

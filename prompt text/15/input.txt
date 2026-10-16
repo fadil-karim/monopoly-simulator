@@ -1,3 +1,0 @@
-8 seats max on normal mode. deepseek will replace something
-
-you know what, I will add more models to the backend and the game will assign a max of 8 at random. never a duplicate, so, no model will play against itself. if there are only 7 models, it will oly populate 7 when max number is set for eg

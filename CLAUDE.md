@@ -25,7 +25,7 @@ public/            everything served as assets
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
-runner/            run.mjs plays games and streams them; config.default.json the default table (a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
+runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + env.local with a simulated D1; the production d1_databases block stays commented out until the owner has created the database
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/runner scripts
@@ -65,7 +65,18 @@ game's players are drawn from the pool by `pickSeats` in `runner.js`:
 the standard board and to the distinct models in the pool), never the same
 model twice (`modelKey`, `provider/model`; the rule-based bot is not a
 model and may fill any number of seats), all of them when the pool is
-smaller, and a seed makes the draw repeatable.
+smaller, and a seed makes the draw repeatable. The dashboard
+(`runner/dashboard.mjs`, `npm run dashboard` or `run.mjs --dashboard`,
+127.0.0.1:8788, `--port`, `--no-open`) serves `dashboard.html`, a page
+that reads the table (`config.json`, else the default) and `runner/.env`
+into a form (site, token, a key box per provider in the pool, the pool
+with a catalogue button per row, seats, edition, games, loop, round limit,
+dry run, instructions, narrator), writes the table to `runner/config.json`
+on Save or Start, writes the site, the token and the keys to `runner/.env`
+only when "remember" is ticked, and starts `run.mjs` as a child process
+with the keys in its environment, streaming its output to the page
+(polled every 1.5 s) and counting the finished games; Stop sends SIGINT,
+which the runner takes as its orderly stop.
 
 The Worker keeps games, seats, events and calls in D1 (`migrations/`). A
 model is identified by `model_key` = `provider/model@effort`, and
@@ -287,3 +298,4 @@ no new prompt leaves the archive untouched.
 | v1.12 | MiMo and Qwen join through OpenRouter | The two Chinese models Perplexity could not serve now have their seats: MiMo-V2.6-Pro and Qwen3.8 Max, the two ranked highest beside Kimi K3, play through OpenRouter on a second key, taking the places of the DeepSeek Flash build and GLM-5.2. |
 | v1.13 | DeepSeek V4 Pro takes a ninth seat | DeepSeek V4 Pro joins the table through OpenRouter as a ninth player rather than in place of anyone, so every model asked for is seated: Claude, Gemini, ChatGPT, Grok, Kimi, MiMo, Qwen, DeepSeek and Nemotron, in a random order every game. |
 | v1.14 | A pool of models, eight drawn to each table | Every game now seats up to eight models drawn at random from the pool in the config, never the same model twice, so the pool can grow past eight and no model ever plays against itself; a pool smaller than the seats plays whole. Qwen3.8 Max is back in the pool beside DeepSeek V4 Pro, so nine models take turns at the table of eight. |
+| v1.15 | A dashboard on your own machine to run the table | Running the games no longer needs a config file or a terminal full of flags: one command opens a page on your machine with the site, the token, a key box for every provider in the pool, the pool itself with each provider's catalogue a click away, the seats and the rest, and Start, Stop and the runner's progress, with the keys kept only for the run unless you choose to remember them. |

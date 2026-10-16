@@ -1,0 +1,22 @@
+There is now a local dashboard, as an option. From the repo on your machine:
+
+```
+npm run dashboard
+```
+
+(or `node runner/run.mjs --dashboard`). It opens a page at 127.0.0.1:8788 in your browser with everything to fill in and the run controls:
+
+- The site address, the runner token, the edition, the seats a game, the games a batch, the pause between games, a round limit, a pause before every turn for watching bots, a loop switch and a dry-run switch.
+- A key box for every provider in the pool, each with a link to where that key comes from. Unticked, "remember" hands the keys to the runner for that run only; ticked, it writes the site, the token and the keys to the ignored `runner/.env` so they are there next time.
+- The pool of models: add or remove rows, pick the provider, type the model id or press the row's catalogue button to list what that provider serves to your key, set the effort and the colour.
+- The universal instructions and the narrator.
+- Save, Start and Stop, with the runner's progress streamed into the page, a count of the games finished and a link to the site's Live tab. Save writes the table to the ignored `runner/config.json`, which the runner prefers from then on; Start saves and runs; Stop finishes the uploads and marks a running game aborted.
+
+The command line still works as before for anyone who prefers it. Nothing in the dashboard leaves your machine except the runner's own uploads to your site; it binds to 127.0.0.1 only.
+
+Verified before the push: the page driven in headless Chromium against a local Worker, loading the nine-model pool and the four key boxes, saving the table, starting a two-round game that seated eight and arrived on the site, and returning to idle with the game counted; the dashboard flag on the runner; the simulator invariants, the replay check, the deploy dry run, the page rendered, the headless viewer suite and two bot games against the local Worker. Pushed to the branch and fast-forwarded to main.
+
+```
+Tag: v1.15  —  Title: A dashboard on your own machine to run the table
+Description: Running the games no longer needs a config file or a terminal full of flags: one command opens a page on your machine with the site, the token, a key box for every provider in the pool, the pool itself with each provider's catalogue a click away, the seats and the rest, and Start, Stop and the runner's progress, with the keys kept only for the run unless you choose to remember them.
+```

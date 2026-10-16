@@ -32,6 +32,7 @@ for (let i = 2; i < process.argv.length; i++) {
   const v = process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[++i] : true;
   args[k] = v;
 }
+if (args.dashboard) { await import('./dashboard.mjs'); await new Promise(() => {}); } // the dashboard runs the runner itself; this process only serves the page
 if (args.help) {
   console.log(`node runner/run.mjs [options]
   --config <file>     runner/config.json when it exists, else runner/config.default.json
@@ -48,7 +49,8 @@ if (args.help) {
   --dry               play without uploading (local copies only)
   --log-prompts       store every prompt and system block with the calls
   --out <dir>         local copies of every game (runner/out)
-  --list-models <p>   print the models a provider serves to your key (e.g. perplexity) and exit`);
+  --list-models <p>   print the models a provider serves to your key (e.g. perplexity) and exit
+  --dashboard         open the local dashboard instead: a page to fill in the site, the keys and the pool, and to start and stop the runner`);
   process.exit(0);
 }
 loadDotEnv(join(here, '.env'));
