@@ -82,6 +82,7 @@ function start(body) {
   if (o.edition) flags.push('--edition', String(o.edition));
   if (o.maxRounds) flags.push('--max-rounds', String(o.maxRounds));
   if (o.delay) flags.push('--delay', String(o.delay));
+  if (o.probe) flags.push('--probe'); // one decision for every model in the pool, then the runner stops
   const env = { ...process.env, MONOPOLY_DASHBOARD: '1' }; // so the runner can say a token came from the token box
   for (const [k, v] of Object.entries(body.env || {})) if (v) env[k] = String(v);
   const child = spawn(process.execPath, [join(here, 'run.mjs'), ...flags], { env, cwd: join(here, '..') });

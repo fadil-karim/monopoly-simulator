@@ -14,11 +14,18 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import net from 'node:net';
 import { Runner, gameRecord, modelKey } from '../public/assets/app/runner.js';
 import { PROVIDERS, callModel, listModels, netReason } from '../public/assets/app/providers.js';
+import { AIDecider } from '../public/assets/app/ai.js';
 import { StatsTracker } from '../public/assets/app/stats.js';
 import { transcript } from '../public/assets/app/transcript.js';
-import { HOTEL, SKYSCRAPER } from '../public/assets/app/engine.js';
+import { Game, HOTEL, SKYSCRAPER } from '../public/assets/app/engine.js';
+
+// Node tries each address of an API for 250 ms before the next, and gives up when the last fails: on a machine
+// whose IPv6 has no route, a moment of slow Wi-Fi then fails every call at once ("connect ETIMEDOUT …; connect
+// EHOSTUNREACH …"), which handed whole turns to the bot. Each attempt now gets two and a half seconds.
+if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === 'function') net.setDefaultAutoSelectFamilyAttemptTimeout(2500);
 
 const VERSION = '1.3';
 const here = dirname(fileURLToPath(import.meta.url));
@@ -50,6 +57,7 @@ if (args.help) {
   --log-prompts       store every prompt and system block with the calls
   --out <dir>         local copies of every game (runner/out)
   --list-models <p>   print the models a provider serves to your key (e.g. perplexity) and exit
+  --probe             ask every model in the pool one real decision, say which answer and which would fall to the bot, and exit
   --dashboard         open the local dashboard instead: a page to fill in the site, the keys and the pool, and to start and stop the runner`);
   process.exit(0);
 }
@@ -65,8 +73,9 @@ const tokenRejected = () => `the site rejected the runner token (401): this runn
 const dry = !!args.dry;
 const outDir = resolve(args.out || cfg.out || join(here, 'out'));
 mkdirSync(outDir, { recursive: true });
-if (!dry && !site && !args['list-models']) die('no site: set "site" in the config, SITE in the environment or --site');
-if (!dry && !token && !args['list-models']) die('no RUNNER_TOKEN in the environment (or --token)');
+const offline = dry || args['list-models'] || args.probe; // neither lists nor the check of the seats need the site
+if (!offline && !site) die('no site: set "site" in the config, SITE in the environment or --site');
+if (!offline && !token) die('no RUNNER_TOKEN in the environment (or --token)');
 
 const keys = {};
 for (const [id, p] of Object.entries(PROVIDERS)) if (p.env && process.env[p.env]) keys[id] = process.env[p.env];
@@ -301,6 +310,45 @@ async function runBatch(batchNo) {
   await runner.run();
   runner = null;
 }
+
+// ---------- --probe: does every seat answer? ----------
+// One real decision for every model in the pool, asked as a game asks it (the rules, the board, the table, a square
+// to buy), all at once: the reply, how long it took, what it cost and whether the engine takes it, so a seat that
+// would hand its decisions to the bot shows before a batch rather than in the statistics after it.
+async function probe() {
+  const pool = players.filter((p) => PROVIDERS[p.provider].kind !== 'none');
+  if (!pool.length) die('no model in the pool to check: every seat is the rule-based bot');
+  console.log(`asking each of the ${pool.length} models in the pool one decision, as a game would…`);
+  let bad = 0;
+  await Promise.all(pool.map(async (p) => {
+    const label = `${p.name} (${PROVIDERS[p.provider].label}, ${p.model}${p.effort ? ` at ${p.effort}` : ''})`;
+    if (!keys[p.provider]) { bad++; console.log(`✗ ${label}: no key (${PROVIDERS[p.provider].env})`); return; }
+    const decider = new AIDecider({ [p.id]: p }, {
+      keys, baseUrls, universal: cfg.universal || '', maxTokens: cfg.maxTokens || 4000, timeoutMs: (cfg.timeoutSeconds || 600) * 1000, concurrency: cfg.apiConcurrency || 8, logPrompts: false,
+    });
+    const game = new Game({ id: `probe-${p.id}`, seed: 7, config: { ...gameConfig, shuffleOrder: false }, players: [{ ...p }, { id: 'bot', name: 'Bot', provider: 'heuristic' }], decider });
+    const me = game.players[0];
+    const sq = game.board.find((s) => s.type === 'street' && s.price >= 100);
+    me.pos = sq.i;
+    const r = await game.decide(me, 'buy', { property: { i: sq.i, name: sq.name, type: sq.type, group: sq.group, price: sq.price }, cash: me.cash, canAfford: true });
+    const rec = game.llmCalls[0] || {};
+    const illegal = game.events.find((e) => e.type === 'illegal_decision');
+    const secs = `${((rec.latencyMs || 0) / 1000).toFixed(1)} s`;
+    const spent = Number.isFinite(rec.cost) ? `, ${usd(rec.cost)}` : '';
+    const tokens = rec.usage ? `, ${rec.usage.input} in / ${rec.usage.output} out tokens` : '';
+    if (r.__source === 'ai') {
+      console.log(`✓ ${label}: ${r.buy ? 'buys' : 'passes on'} ${sq.name} in ${secs}${spent}${tokens}${r.reason ? `: "${String(r.reason).slice(0, 140)}"` : ''}`);
+      return;
+    }
+    bad++;
+    const why = rec.error ? (rec.error === 'empty reply' ? 'an empty reply, {}' : rec.error) : illegal ? `a reply the engine refused (${illegal.reason})` : 'no reply';
+    console.log(`✗ ${label}: ${why}, after ${secs}${spent}; this seat's decisions would fall to the rule-based bot`);
+    if (rec.response != null) console.log(`    reply: ${JSON.stringify(String(rec.response).slice(0, 300))}`);
+  }));
+  console.log(bad ? `${bad} of ${pool.length} seats would not play; see above` : `all ${pool.length} seats answered`);
+  return bad;
+}
+if (args.probe) process.exit(await probe() ? 1 : 0);
 
 (async () => {
   console.log(`Monopoly AI runner ${VERSION} · ${dry ? 'dry run (no uploads)' : site} · a pool of ${players.length} models, ${seats} seats a game · config ${configPath}`);

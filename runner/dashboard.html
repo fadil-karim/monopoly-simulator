@@ -115,12 +115,13 @@
     <div class="actions">
       <button type="button" id="save">Save</button>
       <button type="button" id="start" class="primary">Start</button>
+      <button type="button" id="probe" title="Ask every model in the pool one real decision, as a game would, and say which seats answer">Check the seats</button>
       <button type="button" id="stop" disabled>Stop</button>
       <a id="live" href="#" target="_blank" rel="noopener">Open the site's Live tab</a>
       <span id="msg" class="note"></span>
     </div>
     <pre id="log" class="log">Nothing running.</pre>
-    <p class="hint">Save writes the table to runner/config.json, which the runner prefers from then on; Start saves and runs. Stop finishes the uploads and marks a running game aborted.</p>
+    <p class="hint">Save writes the table to runner/config.json, which the runner prefers from then on; Start saves and runs. Check the seats saves and asks every model in the pool one decision, as a game would, to show which answer and which would hand their decisions to the rule-based bot, for a few cents and without touching the site. Stop finishes the uploads and marks a running game aborted.</p>
   </section>
 </main>
 <script>
@@ -257,11 +258,11 @@ function fill() {
 function renderRun() {
   $('#pill').textContent = S.running ? 'running' : 'idle';
   $('#pill').classList.toggle('on', S.running);
-  $('#start').disabled = S.running; $('#stop').disabled = !S.running;
+  $('#start').disabled = S.running; $('#probe').disabled = S.running; $('#stop').disabled = !S.running;
   $('#games').textContent = S.startedAt ? `${S.games} game${S.games === 1 ? '' : 's'} finished this run` : '';
   const log = $('#log');
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.innerHTML = S.log.length ? S.log.map((l) => `<span class="${/^■ /.test(l) ? 'win' : /^! |error|failed/i.test(l) ? 'warn' : ''}">${esc(l)}</span>`).join('\n') : 'Nothing running.';
+  log.innerHTML = S.log.length ? S.log.map((l) => `<span class="${/^[■✓] /.test(l) ? 'win' : /^[!✗] |error|failed/i.test(l) ? 'warn' : ''}">${esc(l)}</span>`).join('\n') : 'Nothing running.';
   if (atEnd) log.scrollTop = log.scrollHeight;
   const site = $('#site').value.trim().replace(/\/$/, '');
   $('#live').href = site ? site + '/monopoly/#live' : '#';
@@ -322,6 +323,10 @@ $('#save').addEventListener('click', async () => {
 $('#start').addEventListener('click', async () => {
   try { const g = gather(); await api('/api/start', g); $('#msg').textContent = 'Runner started.'; await refresh(false); }
   catch (err) { $('#msg').textContent = `Start failed: ${err.message}`; }
+});
+$('#probe').addEventListener('click', async () => {
+  try { const g = gather(); g.options = { probe: true }; await api('/api/start', g); $('#msg').textContent = 'Checking the seats: one decision for every model in the pool.'; await refresh(false); }
+  catch (err) { $('#msg').textContent = `The check failed to start: ${err.message}`; }
 });
 $('#stop').addEventListener('click', async () => { await api('/api/stop', {}); $('#msg').textContent = 'Stopping: the uploads finish first.'; });
 $('#site').addEventListener('input', renderRun);
