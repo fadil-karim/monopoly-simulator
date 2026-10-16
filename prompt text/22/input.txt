@@ -1,0 +1,5 @@
+Ok, make a homepage of games, this monopoly page will be the page that comes from monopoly. Add chess, checkers and battleship, connect 4 too as placeholders.
+
+Make a plan for the building of those.
+
+Add a section called ‘the players’ at the top listing each available model on the page

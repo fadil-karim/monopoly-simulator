@@ -5,14 +5,33 @@ watch. The games are played from the owner's machine with the owner's API
 keys and streamed to this site move by move; every game is kept in a database
 with its full event log and every model call, so visitors can follow the game
 being played, open any past game and step through it, read what happened,
-and compare the board's statistics and every model's record.
+and compare the board's statistics and every model's record. The site opens
+on a homepage of games: Monopoly, played today, and chess, checkers,
+Battleship and Connect 4 to come, with the plan for building them in
+`PLAN.md`.
 
-The site is a Cloudflare Worker: the viewer in `public/` served as static
-assets, `src/worker.js` for everything under `/api/` (the match history in
-D1, the runner's uploads, the optional narrator), and `runner/run.mjs`, a Node
-program the owner runs wherever the keys live.
+The site is a Cloudflare Worker: the homepage and the Monopoly viewer in
+`public/` served as static assets, `src/worker.js` for everything under
+`/api/` (the match history in D1, the runner's uploads, the optional
+narrator), and `runner/run.mjs`, a Node program the owner runs wherever the
+keys live.
 
 ## What visitors get
+
+- **The homepage** (`/`): *The players* at the top, every model in the pool
+  the runner draws its tables from, each with its maker's logo as a sticker,
+  its name and maker, the API it plays through, its model id and effort, its
+  Monopoly record (games finished, wins and win rate) and a mark while it is
+  at the table; then *The games*: Monopoly with what is on its table now and
+  links to watch it, every game and both statistics pages, and a card each
+  for chess, checkers, Battleship and Connect 4, coming soon. The list of
+  players is the pool the runner reported when it last started; before it
+  has reported one, the models that have played, and before any game, the
+  default table. A link from before the homepage (`/#live`, `/#game/…`)
+  still opens the Monopoly page.
+
+The Monopoly page (`/monopoly/`, its header's "← All games" and its logo
+leading back to the homepage):
 
 - **Live**: the game being played now, following along as events arrive, or
   the latest game when the table is quiet, with no replay controls: the Live
@@ -104,7 +123,8 @@ Perplexity does not serve, go through OpenRouter with one
 catalogues for your keys, the place to check the ids. A seat whose call
 fails plays that decision by the rules-based bot and the call is logged as
 a fallback. No web search is requested from Perplexity, so a call costs
-only its tokens.
+only its tokens. When the runner starts it gives the site its pool, which
+the homepage lists as the players.
 
 Each player is a provider, a model id, an effort setting and optional
 instructions; the runner also records the model id each API reports back on
@@ -269,12 +289,18 @@ Public, read-only, JSON unless noted:
 - `GET /api/games/<id>/transcript?compact=1`: the game as plain text.
 - `GET /api/games/<id>/export?full=1`: everything as one JSON file.
 - `GET /api/stats/monopoly`, `GET /api/stats/models`: the aggregates.
+- `GET /api/players`: the players for the homepage, each model once with its
+  provider, model id, effort, colour, whether it is at a table now and its
+  Monopoly record, and where the list came from (`source`: `runner`, the pool
+  the runner last reported; `games`, the models seen in games; `default`, the
+  default table).
 - `POST /api/games/<id>/ask` `{ "question": "..." }`: the narrator, when on.
 
 The runner's routes under `/api/ingest/` take `Authorization: Bearer
 <RUNNER_TOKEN>`: `POST games`, `POST games/<id>/events`, `POST
 games/<id>/calls`, `POST games/<id>/finish`, `POST games/<id>/abort`,
-`DELETE games/<id>`.
+`DELETE games/<id>`, `POST check` (the token, before a game) and `POST pool`
+(the pool, as the runner starts).
 
 ## Running it locally
 
@@ -285,7 +311,8 @@ npm run dev                # wrangler dev --env local, with RUNNER_TOKEN=local-d
 node runner/run.mjs --config runner/config.bots.json --token local-dev-token --games 2
 ```
 
-then open http://127.0.0.1:8789 (or whatever port wrangler prints).
+then open http://127.0.0.1:8789 (or whatever port wrangler prints) for the
+homepage, and http://127.0.0.1:8789/monopoly/ for the Monopoly page.
 
 ## Checks
 
@@ -295,17 +322,21 @@ npm run check:replay       # the replay reducer against the engine, every event
 npm run check:ledger       # the ledgers whole: every player's cash from the payments, every event, trading players
 npm run check              # wrangler deploy --dry-run
 node scripts/check-providers.mjs # the provider adapters against a mock: the four API shapes, the retry without knobs, what each call costs
-node scripts/seed-trades.mjs     # a scripted trading game for the local site only, for the trades ledger and the logos
-node scripts/verify-viewer.mjs   # the viewer in headless Chromium against the local Worker
+node scripts/seed-trades.mjs     # a scripted trading game for the local site only, for the trades ledger, the logos and the homepage's players
+node scripts/verify-viewer.mjs   # the homepage and the viewer in headless Chromium against the local Worker
 ```
 
 ## Project layout
 
 ```
+PLAN.md                      the plan for chess, checkers, Battleship and Connect 4
 public/
-  index.html                 the viewer: live, games, replay, Monopoly stats, model stats, about
+  index.html                 the homepage: the players and the games
+  monopoly/index.html        the Monopoly viewer: live, games, replay, Monopoly stats, model stats, about
   404.html                   themed not-found page
   assets/style/site.css
+  assets/style/home.css       the homepage's own styles
+  assets/app/home.js          the homepage: the players and what is on Monopoly's table
   assets/app/viewer.js        the viewer controller
   assets/app/replay.js        rebuilds a game's state from its event log (checked against the engine)
   assets/app/stats.js         from the event log: the match, each player and each property, every payment and every trade offer
@@ -324,7 +355,8 @@ public/
 src/worker.js                the Worker: /api/* over D1, assets for the rest
 src/aggregate.js             the statistics aggregations
 migrations/0001_init.sql     the schema
-migrations/0002_cost.sql     the cost of each call (the Worker applies both itself)
+migrations/0002_cost.sql     the cost of each call
+migrations/0003_site.sql     the site's own records: the pool the runner reported (the Worker applies all three itself)
 runner/run.mjs               plays games and streams them to the site
 runner/dashboard.mjs         the local dashboard (with dashboard.html): the table, the keys, start and stop
 runner/config.default.json   the default table: the pool of models and the seats

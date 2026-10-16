@@ -4,10 +4,12 @@ Standing policy for this repository. Read it before making any change here.
 
 ## What this repo is
 
-A Cloudflare Worker site: the viewer in `public/` served as static assets and
-`src/worker.js` for everything under `/api/`. AI models play Monopoly
+A Cloudflare Worker site: a homepage of games and the Monopoly viewer in
+`public/` served as static assets and `src/worker.js` for everything under
+`/api/`. AI models play Monopoly
 (London and Mega editions) against each other, up to eight at a table drawn
-from a pool; the games are played by
+from a pool, with chess, checkers, Battleship and Connect 4 on the homepage
+as placeholders and the plan for them in `PLAN.md`; the games are played by
 `runner/run.mjs` on the owner's machine with the owner's keys and streamed
 to the site, which keeps every game in D1 and shows them live and move by
 move. There is no build step - the files in `public/` are the site. The repo
@@ -16,19 +18,21 @@ to production**.
 
 ```
 public/            everything served as assets
-  index.html       the viewer: live, games, replay, Monopoly stats, model stats, about
+  index.html       the homepage: the players (the pool of models, each with its record) and the games (Monopoly, then chess, checkers, Battleship and Connect 4, coming soon)
+  monopoly/index.html  the Monopoly viewer: live, games, replay, Monopoly stats, model stats, about
   404.html
-  assets/app|style|fonts|logos   app/ the modules (viewer, replay, stats, transcript, names, engine, board, heuristics, providers, pricing, ai, runner, analytics), style/site.css, fonts/jost.woff2 (OFL, the only font file), logos/ the models' makers' logos on the tokens (LICENSE.txt: LobeHub's icons, MIT; Xiaomi's from Simple Icons, CC0)
+  assets/app|style|fonts|logos   app/ the modules (home, viewer, replay, stats, transcript, names, engine, board, heuristics, providers, pricing, ai, runner, analytics), style/site.css and home.css (the homepage's own), fonts/jost.woff2 (OFL, the only font file), logos/ the models' makers' logos on the tokens (LICENSE.txt: LobeHub's icons, MIT; Xiaomi's from Simple Icons, CC0)
   _headers         security + caching headers (fonts immutable; app and style revalidated on every load, because the modules import each other by name; logos a day)
   robots.txt
                    app/names.js the board editions (names by position, currencies) the viewer reads a game as
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
-migrations/        the D1 schema (games, game_players, events, llm_calls, asks; 0002 the cost of each call), applied by the Worker itself on first use
+migrations/        the D1 schema (games, game_players, events, llm_calls, asks; 0002 the cost of each call; 0003 site_meta, the pool the runner reported), applied by the Worker itself on first use
 runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
-scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), check-ledger.mjs (the ledgers vs the engine's cash, with the trading players of traders.mjs), seed-trades.mjs (a scripted trading game for the local site only), verify-viewer.mjs (the viewer in headless Chromium)
+scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), check-ledger.mjs (the ledgers vs the engine's cash, with the trading players of traders.mjs), seed-trades.mjs (a scripted trading game for the local site only, its eight models given as the pool), verify-viewer.mjs (the homepage and the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/check:ledger/runner scripts
+PLAN.md            the plan for building chess, checkers, Battleship and Connect 4, with the owner's open questions
 prompt text/       the AI-instruction archive for the version in service
 ```
 
@@ -172,7 +176,37 @@ all in the model statistics with a chart of lying bars (`hbarChart`, any
 number of models, each label whole). A price changes by adding a period to
 `PRICES`, never by editing a past one.
 
-The viewer (`public/assets/app/viewer.js`) routes by hash: `#live` (the
+The homepage (`public/index.html`, `home.js`, `home.css` over `site.css`)
+is the site's front page, at the owner's request, and the Monopoly viewer
+is one game on it, at `/monopoly/` (`public/monopoly/index.html`; its logo
+and the "← All games" tab lead back). At the top, "The players"
+(`#the-players`): every model in the pool, a card each with its maker's
+logo as a sticker (`modelLogo`), its name (`modelName`), its maker
+(`modelMaker` in `pricing.js`, by the logo) and the API it plays through
+(`apiName`), its model id and effort, its seat name, its Monopoly record
+(finished games, wins, win rate) and "At the table" while it plays. The
+list is `GET /api/players` (`thePlayers`, edge-cached 30 s): the pool the
+runner last reported, which it posts to `POST /api/ingest/pool` (bearer)
+after its token check (`ingestPool` keeps it in `site_meta` under `pool`,
+migration 0003; `seed-trades.mjs` gives its eight models the same way),
+else the models seen in games, else the default table (`DEFAULT_TABLE`,
+`runner/config.default.json` imported into the Worker), named by
+`source`; each model once by `modelKey`, its record from `aggregateModels`
+at the exact key, else at every effort of the same model. Then "The
+games" (`#the-games`): Monopoly's card with what is on its table now
+(`/api/live` and the games count: "Live now" or "Between games", the
+round or the latest winner, the players' marks) and Watch, Every game,
+Statistics and Model stats, and a "Coming soon" card each for chess,
+checkers, Battleship and Connect 4, each with its own small picture,
+which turn live as the games are built (`PLAN.md`). The homepage reloads
+the players and the table every 30 s while visible. A link from before
+the move (`/#live`, `/#game/<id>`, `#games`, `#stats`, `#models`,
+`#about`) is sent on to `/monopoly/` with its hash by a line in the
+homepage's head, on loading and on a hash typed while the page is open
+(its own tabs, `#the-players` and `#the-games`, stay); the 404 page offers the board and all the games, and the
+dashboard's Live link is `/monopoly/#live`.
+
+The viewer (`public/assets/app/viewer.js`, on `/monopoly/`) routes by hash: `#live` (the
 running game, following as events arrive, or the latest finished one; polls
 `/api/live` every 15 s to pick up the next game; no replay controls, at the
 owner's request: `gameControls` shows the replay bar only on `#game/<id>`,
@@ -350,7 +384,8 @@ node runner/run.mjs --config runner/config.bots.json --token local-dev-token --g
    against it and seed a trading game (`node scripts/seed-trades.mjs`, which
    refuses any site but this machine's), then `node scripts/verify-viewer.mjs` (with
    `PLAYWRIGHT_MODULE` and `CHROME_PATH` when playwright is not installed
-   here) and look at its screenshots in `.render-check/viewer/`: the live
+   here) and look at its screenshots in `.render-check/viewer/`: the
+   homepage and its players (desktop and phone), the live
    tab, the replay, the games list, both statistics pages, a game followed
    live, the ledgers, the roll label, the logos, the phone. For a change to
    the dashboard, drive it in headless Chromium with `/api/models` answered
@@ -423,3 +458,4 @@ no new prompt leaves the archive untouched.
 | v1.18 | The runner's token, checked before the game begins | The runner now checks its token with the site before it starts a game, so a token the site refuses no longer stops a game that has already begun calling the models, and it says which token it sent, where it came from and how long it is, so a mistyped or stale one is easy to spot. Spaces or a line break around the token, the usual souvenir of copying it from a terminal, no longer make the site refuse it. |
 | v1.19 | Every payment, trade and property on the books | Under every game now sit its ledgers, following the move shown: every payment between the players and with the bank, with a table of who paid whom; every trade offered, with its counter-offers, the answers and how it ended; and every property's landings, rent, price, buildings and history. Each model's token wears its maker's logo, the roll charts say how often each total has come up out of all the rolls, and the dashboard lets you pick each model from a dropdown of everything its provider serves. |
 | v1.20 | Logo stickers on the board, houses you can see | Each model's token is now its maker's whole logo, cut out like a sticker with a white outline, instead of a small logo inside a coloured ring. Houses and hotels now stand on the property's colour band as they do on the printed board, a green house each and a red hotel, much larger than the old marks and outlined in white so they read on every colour. |
+| v1.21 | A homepage for every game, with its players | The site now opens on a homepage of games: the players at the top, every model in the pool with its maker's logo, the API it plays through and its Monopoly record, then Monopoly with what is on its table now, and chess, checkers, Battleship and Connect 4 waiting beside it, marked coming soon. Monopoly has a page of its own, a click from the homepage, and old links to it still land there. A plan for building the four new games now sits with the code, ending with the questions that need your answer. |

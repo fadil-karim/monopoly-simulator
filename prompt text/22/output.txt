@@ -1,0 +1,25 @@
+The site now opens on a homepage of games, and Monopoly has moved to a page of its own at `/monopoly/`. Released as v1.21 on `main`.
+
+**The homepage**
+- **The players** is at the top. It lists every model in the pool, each with its maker's logo as a sticker, its name and maker, the API it plays through, its model id and effort, and its Monopoly record (games, wins, win rate). A model playing right now shows "At the table".
+- **The games** comes next. Monopoly shows what is on its table now and has links to watch, every game and both statistics pages. Chess, Checkers, Battleship and Connect 4 each have a card with its own picture, marked "Coming soon".
+- Old links such as `/#live` or `/#game/…` still open the Monopoly page. The Monopoly page's logo and a new "← All games" tab lead back to the homepage.
+
+**One step for you:** the list of players comes from the runner, which now tells the site its pool each time it starts. Until you `git pull` and restart the runner or dashboard on your Mac, the homepage lists the models that have already played.
+
+**The plan** is in `PLAN.md`. Each game reuses what Monopoly proved: an engine that logs every move, a replay checked against it, the same providers, costs and runner, and a page per game. The order, one release each:
+1. **Platform + Connect 4.** The site learns to hold several game types, two-player games get Elo ratings, and Connect 4 comes first because it is small and solved, so every move can be scored against perfect play.
+2. **Chess,** with the full rules from chess.js and a draw after 300 plies.
+3. **Checkers,** English draughts on its own engine.
+4. **Battleship,** with hidden fleets, a test that no prompt leaks the other fleet, and a probability bot as a yardstick.
+
+Rough cost for the dearest models is $0.30–1 a game for Connect 4 and $1–4 for the others.
+
+The plan needs your answer on five questions before work starts:
+1. Pairings: a round robin (fairer ratings) or a random pair each game?
+2. Should the prompt list the legal moves? I recommend it.
+3. Stockfish grading for chess later, or not at all?
+4. Do you want a games.basilicalabs.ai address as well?
+5. Should the dashboard have a spending cap?
+
+**Verified:** the deploy dry run, the engine simulation (0 illegal moves), the replay and ledger checks, and two bot games plus a seeded trading game into a fresh local site. The browser check passed on the homepage (players, games, old links) and on every Monopoly page check, and I looked at the screenshots on desktop, phone and dark mode. That check caught that an old link typed while the homepage was already open didn't move on, which is fixed.
