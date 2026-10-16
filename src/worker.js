@@ -35,7 +35,7 @@ export default {
 async function route(request, env, ctx, url) {
   const path = url.pathname.replace(/\/+$/, '');
   const m = request.method;
-  if (path === '/api/health') return json({ ok: true, db: !!env.DB, token: !!env.RUNNER_TOKEN, narrator: !!env.NARRATOR_API_KEY, time: now() });
+  if (path === '/api/health') return json({ ok: true, db: !!env.DB, token: !!runnerToken(env), narrator: !!env.NARRATOR_API_KEY, time: now() });
   if (!env.DB) return json({ error: 'no database bound', help: 'The deploy binds the database named in wrangler.jsonc (see README, "Setting up the site").' }, 503);
   await ensureSchema(env.DB);
   let r;
@@ -54,6 +54,7 @@ async function route(request, env, ctx, url) {
     if ((r = path.match(/^\/api\/games\/([^/]+)\/ask$/))) return ask(request, env, r[1]);
     if (path.startsWith('/api/ingest/')) {
       if (!authorised(request, env)) return fail('unauthorised', 401);
+      if (path === '/api/ingest/check') return json({ ok: true }); // the runner asks before it starts a game
       const body = await request.json().catch(() => null);
       if (!body) return fail('invalid JSON');
       if (path === '/api/ingest/games') return ingestGame(env, body);
@@ -96,10 +97,13 @@ async function ensureSchema(db) {
 }
 
 // ---------- helpers ----------
+// The runner's token. Spaces and line breaks around it are no part of it: a secret pasted from a terminal often
+// carries a line break, and the runner trims what it sends.
+const runnerToken = (env) => String(env.RUNNER_TOKEN || '').trim();
 function authorised(request, env) {
-  if (!env.RUNNER_TOKEN) return false;
-  const given = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  const want = env.RUNNER_TOKEN;
+  const want = runnerToken(env);
+  if (!want) return false;
+  const given = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
   if (given.length !== want.length) return false;
   let diff = 0;
   for (let i = 0; i < want.length; i++) diff |= given.charCodeAt(i) ^ want.charCodeAt(i);

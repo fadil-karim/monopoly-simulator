@@ -61,7 +61,13 @@ the narrator's recap when a narrator is configured. Uploads are idempotent
 also written to `runner/out/`. When the site cannot be reached the runner
 says why before it plays (`siteWhy` over `netReason`: an address that does
 not resolve, a certificate it will not trust, nothing answering, or a page
-that is not the site's API, each with what to check). `--delay` pauses before each turn so a
+that is not the site's API, each with what to check), then tries its token
+at `/api/ingest/check` before any game starts, since a game begins without
+waiting for the site and a refused token would otherwise stop the runner
+with model calls already made; a refusal names the token it sent, where from
+(`tokenFrom`: the dashboard's token box, which the dashboard marks with
+`MONOPOLY_DASHBOARD`, the environment, `runner/.env` or `--token`) and how
+long (`tokenRejected`). `--delay` pauses before each turn so a
 bot-only game can be watched live; `--loop` keeps playing batches. Each
 game's players are drawn from the pool by `pickSeats` in `runner.js`:
 `seats` of them at random (8 by default; the runner clamps it to eight on
@@ -106,7 +112,9 @@ record written. A new migration file is added to `MIGRATIONS` too. Without
 `env.DB` every data route answers 503 and the viewer says the database is
 not set up yet. The owner's one step is the `RUNNER_TOKEN` secret, set once
 in the Worker's settings in the Cloudflare dashboard or with `wrangler secret
-put RUNNER_TOKEN`.
+put RUNNER_TOKEN`; the Worker compares it trimmed (`runnerToken`), since a
+secret pasted from a terminal often carries a line break, and answers
+`POST /api/ingest/check` so the runner can try its token before a game.
 
 What a game costs (`pricing.js`, shared by the runner, the Worker and the
 viewer): every model call is priced as it is made, in US dollars, and the
@@ -356,3 +364,4 @@ no new prompt leaves the archive untouched.
 | v1.15 | A dashboard on your own machine to run the table | Running the games no longer needs a config file or a terminal full of flags: one command opens a page on your machine with the site, the token, a key box for every provider in the pool, the pool itself with each provider's catalogue a click away, the seats and the rest, and Start, Stop and the runner's progress, with the keys kept only for the run unless you choose to remember them. |
 | v1.16 | Each model's bill for every game, database included | Every game now shows what it cost, seat by seat: each model by name, the API that served it and the dollars its calls came to, with the game's total in the games list and each model's average cost a game in the model statistics. The site also creates its own database when it deploys and lays out its tables itself, so the only setup left is the runner's token, and the runner and its dashboard already know the site's address. |
 | v1.17 | A quieter Live tab, and errors that say why | The Live tab now simply follows the game, without the replay controls: they appear only when you open an older game, which a finished game on the Live tab offers with a Replay this game button, and the full-screen and link buttons step aside when there is no game on the table. When the runner cannot reach the site, or a model's service, it now says why, whether the address does not resolve, the certificate is not trusted or nothing answers, and what to check. |
+| v1.18 | The runner's token, checked before the game begins | The runner now checks its token with the site before it starts a game, so a token the site refuses no longer stops a game that has already begun calling the models, and it says which token it sent, where it came from and how long it is, so a mistyped or stale one is easy to spot. Spaces or a line break around the token, the usual souvenir of copying it from a terminal, no longer make the site refuse it. |

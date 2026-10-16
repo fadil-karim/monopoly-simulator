@@ -53,11 +53,15 @@ if (args.help) {
   --dashboard         open the local dashboard instead: a page to fill in the site, the keys and the pool, and to start and stop the runner`);
   process.exit(0);
 }
+const tokenInEnv = process.env.RUNNER_TOKEN != null; // before runner/.env fills the gaps, to say where the token came from
 loadDotEnv(join(here, '.env'));
 const configPath = resolve(args.config || (existsSync(join(here, 'config.json')) ? join(here, 'config.json') : join(here, 'config.default.json')));
 const cfg = JSON.parse(readFileSync(configPath, 'utf8'));
 const site = String(args.site || process.env.SITE || cfg.site || '').replace(/\/$/, '');
-const token = args.token || process.env.RUNNER_TOKEN || '';
+const token = String(args.token || process.env.RUNNER_TOKEN || '').trim();
+const tokenFrom = args.token ? 'the --token option' : tokenInEnv ? (process.env.MONOPOLY_DASHBOARD ? "the dashboard's token box" : 'the RUNNER_TOKEN environment variable') : 'runner/.env';
+// What a refused token means, with which token this runner sent, so a stale or mistyped one shows.
+const tokenRejected = () => `the site rejected the runner token (401): this runner sent ${token.length} characters from ${tokenFrom}, which is not the RUNNER_TOKEN secret on the Worker. Put the same value in both: the secret in Cloudflare (Workers & Pages, the Worker, Settings, Variables and Secrets, edit RUNNER_TOKEN) and ${tokenFrom}`;
 const dry = !!args.dry;
 const outDir = resolve(args.out || cfg.out || join(here, 'out'));
 mkdirSync(outDir, { recursive: true });
@@ -114,7 +118,7 @@ async function post(path, body, attempts = 6) {
       const res = await fetch(`${site}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
       const text = await res.text();
       if (res.ok) { try { return JSON.parse(text); } catch { return { ok: true }; } }
-      if (res.status === 401) die('the site rejected the runner token (401)');
+      if (res.status === 401) die(tokenRejected());
       if (res.status === 503) throw new Error(`site has no database yet: ${text.slice(0, 120)}`);
       if (res.status >= 400 && res.status < 500) throw Object.assign(new Error(`${res.status}: ${text.slice(0, 200)}`), { fatal: true });
       throw new Error(`${res.status}: ${text.slice(0, 200)}`);
@@ -308,6 +312,10 @@ async function runBatch(batchNo) {
     if (!h.ok) die(`the site did not answer: ${h.error || JSON.stringify(h)}`);
     if (!h.db) die('the site has no database yet: see "Setting up the site" in the README');
     if (h.token === false) die('the site has no runner token yet: add a secret named RUNNER_TOKEN to the Worker in Cloudflare (README, "Setting up the site") and give the runner the same value');
+    // The token, before any game starts: a game begins without waiting for the site, so a refused token would
+    // otherwise stop the runner with model calls already made. A site from before this check answers 404 and is let be.
+    const check = await fetch(`${site}/api/ingest/check`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: '{}' }).then((r) => r.status, () => 0);
+    if (check === 401) die(tokenRejected());
   }
   let batchNo = 0;
   for (;;) {

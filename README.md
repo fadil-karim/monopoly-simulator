@@ -133,7 +133,10 @@ decision and is counted as a fallback.
    npx wrangler secret put RUNNER_TOKEN
    ```
    The runner checks the site before it plays and says which of the two is
-   missing.
+   missing, then checks the token itself before it starts a game. Spaces or
+   a line break around the token, on either side, are ignored; when the site
+   refuses it, the runner says which token it sent, where from and how long,
+   so a mistyped or stale one shows.
 3. Optional narrator, for the "ask the game" box: `npx wrangler secret put
    NARRATOR_API_KEY`, and `NARRATOR_PROVIDER`, `NARRATOR_MODEL`,
    `NARRATOR_EFFORT`, `NARRATOR_BASE` as vars or secrets (defaults: Anthropic,
