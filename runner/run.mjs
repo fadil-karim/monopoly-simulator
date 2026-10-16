@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Runner, gameRecord, modelKey } from '../public/assets/app/runner.js';
-import { PROVIDERS, callModel, listModels } from '../public/assets/app/providers.js';
+import { PROVIDERS, callModel, listModels, netReason } from '../public/assets/app/providers.js';
 import { StatsTracker } from '../public/assets/app/stats.js';
 import { transcript } from '../public/assets/app/transcript.js';
 import { HOTEL, SKYSCRAPER } from '../public/assets/app/engine.js';
@@ -96,6 +96,16 @@ if (distinct < players.length) console.warn(`! the pool lists the same model mor
 seats = Math.min(seats, distinct);
 
 // ---------- the site ----------
+// Why the site could not be reached, with what to do about it: Node's own reason, then a hint by its kind.
+function siteWhy(e) {
+  const why = netReason(e);
+  const c = (e && e.cause) || {};
+  const kind = `${c.code || (c.errors && c.errors[0] && c.errors[0].code) || ''} ${why}`;
+  if (/ENOTFOUND|EAI_AGAIN|EAI_NONAME/.test(kind)) return `${why}. The address does not resolve: check it, and that the domain is attached to the Worker in Cloudflare (Workers & Pages, the Worker, Settings, Domains & Routes)`;
+  if (/CERT|SSL|TLS|EPROTO|certificate|self.signed|issuer/i.test(kind)) return `${why}. The secure connection failed: a new domain's certificate can take a few minutes to arrive, or a VPN, proxy or antivirus on this machine is intercepting the connection`;
+  if (/ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|ECONNRESET|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET/.test(kind)) return `${why}. Nothing answered at that address: check it, and any VPN or proxy on this machine`;
+  return why;
+}
 async function post(path, body, attempts = 6) {
   if (dry) return { ok: true, dry: true };
   let delay = 1000;
@@ -110,7 +120,7 @@ async function post(path, body, attempts = 6) {
       throw new Error(`${res.status}: ${text.slice(0, 200)}`);
     } catch (e) {
       if (e.fatal || k >= attempts) throw e;
-      console.warn(`  upload ${path} failed (${e.message}); retrying in ${delay / 1000}s`);
+      console.warn(`  upload ${path} failed (${siteWhy(e)}); retrying in ${delay / 1000}s`);
       await sleep(delay);
       delay = Math.min(delay * 2, 30000);
     }
@@ -291,7 +301,10 @@ async function runBatch(batchNo) {
 (async () => {
   console.log(`Monopoly AI runner ${VERSION} · ${dry ? 'dry run (no uploads)' : site} · a pool of ${players.length} models, ${seats} seats a game · config ${configPath}`);
   if (!dry) {
-    const h = await fetch(`${site}/api/health`).then((r) => r.json()).catch((e) => ({ error: e.message }));
+    const h = await fetch(`${site}/api/health`).then(async (r) => {
+      const text = await r.text();
+      try { return JSON.parse(text); } catch { return { error: `${site}/api/health answered ${r.status} with ${r.headers.get('content-type') || 'no content type'}, not the site's API: check the address` }; }
+    }).catch((e) => ({ error: siteWhy(e) }));
     if (!h.ok) die(`the site did not answer: ${h.error || JSON.stringify(h)}`);
     if (!h.db) die('the site has no database yet: see "Setting up the site" in the README');
     if (h.token === false) die('the site has no runner token yet: add a secret named RUNNER_TOKEN to the Worker in Cloudflare (README, "Setting up the site") and give the runner the same value');

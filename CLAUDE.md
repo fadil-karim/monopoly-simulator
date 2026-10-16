@@ -58,7 +58,10 @@ with the served model ids) and the game `summary` (match totals, buildings,
 winner, per-property landings, rent, purchase and ownership changes), plus
 the narrator's recap when a narrator is configured. Uploads are idempotent
 (`INSERT OR IGNORE` by sequence), retried with backoff, and every game is
-also written to `runner/out/`. `--delay` pauses before each turn so a
+also written to `runner/out/`. When the site cannot be reached the runner
+says why before it plays (`siteWhy` over `netReason`: an address that does
+not resolve, a certificate it will not trust, nothing answering, or a page
+that is not the site's API, each with what to check). `--delay` pauses before each turn so a
 bot-only game can be watched live; `--loop` keeps playing batches. Each
 game's players are drawn from the pool by `pickSeats` in `runner.js`:
 `seats` of them at random (8 by default; the runner clamps it to eight on
@@ -239,7 +242,9 @@ provider-prefixed ids such as `openai/gpt-5.5`, `xai/grok-4.7`,
 `perplexity/kimi-k3`, `zai/glm-5.2`; effort maps to its `preset`, fast to
 xhigh; no tools are requested, so no web search is run). Every adapter
 returns `servedModel`, retries once without its optional knobs on a 400,
-and takes `plain: true` to skip the JSON format for prose (the narrator).
+and takes `plain: true` to skip the JSON format for prose (the narrator); a
+fetch that fails carries Node's reason in its message (`netReason`: Node's
+"fetch failed" keeps it in `cause`) and is still retried.
 `scripts/check-providers.mjs` drives the Responses and chat shapes against
 a mock. The default table (`runner/config.default.json`, read when
 `runner/config.json` is absent) draws eight seats a game from a pool of

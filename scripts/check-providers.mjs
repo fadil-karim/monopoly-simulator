@@ -70,5 +70,10 @@ must(g.costSource === 'priced' && near(g.cost, (1000 * gp.input + 2000 * gp.cach
 must(priceFor('google', 'gemini-4-argon', new Date('2026-11-30T23:00:00Z')).input === 2 && priceFor('google', 'gemini-4-argon', new Date('2026-12-01T00:00:00Z')).input === 4, 'the Gemini price doubles on 1 December 2026');
 const o = await callModel({ provider: 'zhipu', model: 'glm-5', effort: 'medium', apiKey: 'z', baseUrl: base, system, user: 'Respond', maxTokens: 100, timeoutMs: 5000, price: { input: 1, output: 2 } });
 must(o.costSource === 'priced' && near(o.cost, (50 * 1 + 8 * 2) / 1e6), `a price from the config prices a model the list lacks: ${o.cost}`);
+
+// An API that cannot be reached: the reason Node keeps out of "fetch failed" is in the message, and the call is retried.
+const closed = await new Promise((r) => { const t = http.createServer(); t.listen(0, '127.0.0.1', () => { const port = t.address().port; t.close(() => r(port)); }); });
+const failed = await callModel({ provider: 'openrouter', model: 'qwen/qwen3.8-max', apiKey: 'or', baseUrl: `http://127.0.0.1:${closed}/v1`, system, user: 'Bid?', maxTokens: 10, timeoutMs: 3000 }).then(() => null, (e) => e);
+must(failed && failed.name === 'TypeError' && /ECONNREFUSED/.test(failed.message), `an unreachable API names the reason: ${failed && failed.message}`);
 srv.close();
 console.log('providers ok');

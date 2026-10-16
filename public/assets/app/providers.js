@@ -153,6 +153,15 @@ function headroom(effort) {
 }
 
 // ---------- fetch with retries ----------
+// Node's fetch says only "fetch failed" and keeps the reason in `cause`: a name that does not resolve, a
+// connection refused or timed out, a certificate it would not trust. This puts the reason into the message.
+export function netReason(e) {
+  const c = e && e.cause;
+  if (!c) return (e && e.message) || String(e);
+  const inner = c.errors && c.errors.length ? c.errors.map((x) => x.message || x.code).join('; ') : c.message || c.code || '';
+  return inner && !String(e.message).includes(inner) ? `${e.message}: ${inner}` : e.message;
+}
+
 async function fetchJson(url, init, timeoutMs, signal) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(new Error('timeout')), timeoutMs);
@@ -164,6 +173,9 @@ async function fetchJson(url, init, timeoutMs, signal) {
     let json = null;
     try { json = JSON.parse(text); } catch { /* not JSON */ }
     return { ok: res.ok, status: res.status, json, text, headers: res.headers };
+  } catch (e) {
+    if (e && e.cause) e.message = netReason(e); // still the TypeError withRetries retries
+    throw e;
   } finally {
     clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', onAbort);

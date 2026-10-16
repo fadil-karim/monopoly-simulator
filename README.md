@@ -194,6 +194,13 @@ with Ctrl-C: the uploads finish and running games are marked aborted.
 Prompts are not stored unless `"logPrompts": true` (or `--log-prompts`); the
 reply, the parsed decision, latency and tokens always are.
 
+When the runner cannot reach the site it says why before it plays: an
+address that does not resolve (the domain not attached to the Worker yet, or
+an old answer cached on the machine), a certificate it will not trust (a new
+domain's still on its way, or a VPN, proxy or antivirus in between), nothing
+answering, or a page that is not the site's API. A model call that cannot
+reach its API carries the same reason in its error.
+
 ### What a game costs
 
 Every model call is priced as it is made, in US dollars, and the figure is
