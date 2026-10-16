@@ -24,7 +24,7 @@ public/            everything served as assets
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
-runner/            run.mjs plays games and streams them; config.example.json the eight players; config.bots.json bots for tests; .env, config.json and out/ are ignored
+runner/            run.mjs plays games and streams them; config.default.json the default table (the eight players, random order, Claude and Gemini direct, the six others through Perplexity); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + env.local with a simulated D1; the production d1_databases block stays commented out until the owner has created the database
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/runner scripts
@@ -46,8 +46,9 @@ statistics incrementally from the same log; `transcript.js` has the one
 line per event (`fmtEvent`, `eventLine`) and the plain-text `transcript`
 (`compact` drops dice, moves and other noise; `maxChars` trims the middle).
 
-The runner (`runner/run.mjs`) reads `runner/config.json` (players, universal
-instructions, engine config, narrator) and the keys from the environment or
+The runner (`runner/run.mjs`) reads `runner/config.json` when it exists, else
+`runner/config.default.json` (players, universal instructions, engine config,
+narrator) and the keys from the environment or
 `runner/.env` (`PROVIDERS[*].env` names them), registers each game at
 `POST /api/ingest/games`, buffers events and calls and flushes them every
 700 ms, and at the end posts `finish` with the result, each player's rank,
@@ -177,11 +178,14 @@ xhigh; no tools are requested, so no web search is run). Every adapter
 returns `servedModel`, retries once without its optional knobs on a 400,
 and takes `plain: true` to skip the JSON format for prose (the narrator).
 `scripts/check-providers.mjs` drives the Responses and chat shapes against
-a mock. The example config routes ChatGPT, Grok, Kimi and GLM through
-Perplexity with one key, Claude and Gemini directly, and Mimo and Mistral
-directly because Perplexity's catalogue did not list them; the runner's
-`--list-models <provider>` prints a provider's catalogue for the owner's
-key.
+a mock. The default table (`runner/config.default.json`, read when
+`runner/config.json` is absent) seats Claude Opus 5.5 at xhigh (Anthropic,
+direct), Gemini 4 Argon (Google, direct) and, through Perplexity with one
+key, GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3
+Ultra under the ids Perplexity's changelog lists, in a random seating order;
+the runner's `--list-models <provider>` prints a provider's catalogue for
+the owner's key, which is where those ids are checked, and a call that fails
+plays that decision by the rules-based bot (`ai_fallback`).
 ## Local development
 
 ```bash
@@ -266,3 +270,4 @@ no new prompt leaves the archive untouched.
 | v1.8 | The squares take the printed board's shape | The board now has the printed board's proportions, with large corner squares and property boxes that stand tall along the top and bottom and lie wide at the sides, and every name and price is centred in its box with the name kept to whole words, however the window is sized. Chance, Community Chest, the stations and the utilities carry their pictures, and GO is lettered in red with a black outline and the arrow that points the way round the board. |
 | v1.9 | One lettering, names on hover, the board full screen | Every name on the board is now set at one size, a little smaller, chosen so that the longest word still fits its square, so Bow Street no longer out-sizes Marlborough Street and short names sit on one line; the prices and pictures follow it. Hovering any square shows its name and price large beside it, and a Full screen button in the game bar puts the board alone across the window, with Escape to come back. |
 | v1.10 | Car, policeman and bars on the corner squares | Free Parking now carries its car, Go To Jail its policeman and the Jail its bars, as on the printed board. The pictures of Chance, Community Chest, the stations and the utilities sit in the middle of their squares, and on the left and right columns the price sits at the bottom of the square, as it does along the top and bottom. |
+| v1.11 | The default table: eight frontier seats, one Perplexity key | The runner now plays a default table without any copying or editing: Claude Opus 5.5 at its highest effort and Gemini 4 Argon on their own APIs, with GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3 Ultra through Perplexity on one key, seated in a random order every game; an edited copy of the file still takes over when a different table is wanted. |

@@ -5,6 +5,8 @@
 //
 //   node runner/run.mjs [--config runner/config.json] [--games 1] [--loop] [--dry]
 //
+// Without --config the runner reads runner/config.json when it exists, else runner/config.default.json, the default table.
+//
 // Keys come from the environment (or runner/.env): ANTHROPIC_API_KEY,
 // OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, MOONSHOT_API_KEY, XIAOMI_API_KEY,
 // ZAI_API_KEY, MISTRAL_API_KEY, ... (see PROVIDERS[*].env), plus RUNNER_TOKEN
@@ -32,7 +34,7 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 if (args.help) {
   console.log(`node runner/run.mjs [options]
-  --config <file>     runner/config.json (falls back to runner/config.example.json)
+  --config <file>     runner/config.json when it exists, else runner/config.default.json
   --games <n>         games in this batch (config.games)
   --concurrency <n>   games at once (config.concurrency)
   --seed <n>          first seed, +1 per game (random when unset)
@@ -49,7 +51,7 @@ if (args.help) {
   process.exit(0);
 }
 loadDotEnv(join(here, '.env'));
-const configPath = resolve(args.config || (existsSync(join(here, 'config.json')) ? join(here, 'config.json') : join(here, 'config.example.json')));
+const configPath = resolve(args.config || (existsSync(join(here, 'config.json')) ? join(here, 'config.json') : join(here, 'config.default.json')));
 const cfg = JSON.parse(readFileSync(configPath, 'utf8'));
 const site = String(args.site || process.env.SITE || cfg.site || '').replace(/\/$/, '');
 const token = args.token || process.env.RUNNER_TOKEN || '';

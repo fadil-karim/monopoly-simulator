@@ -61,16 +61,18 @@ program the owner runs wherever the keys live.
 
 ## The players
 
-The example configuration seats Claude (Anthropic), ChatGPT (OpenAI), Gemini
-(Google), Grok (xAI), Kimi (Moonshot), Mimo (Xiaomi), GLM (Z.ai) and Mistral.
-Claude and Gemini are called directly; ChatGPT, Grok, Kimi and GLM go
-through Perplexity's Agent API with one `PERPLEXITY_API_KEY`, under the
-provider-prefixed ids it serves (`openai/gpt-5.5`, `xai/grok-4.7`,
-`perplexity/kimi-k3`, `zai/glm-5.2` in the example; `node runner/run.mjs
---list-models perplexity` prints the current catalogue for your key). Mimo
-and Mistral stay on their own APIs because Perplexity's catalogue did not
-list them when this was written; to move one, change its `provider` to
-`perplexity` and its `model` to the id the catalogue shows. No web search is
+The default table (`runner/config.default.json`) seats Claude Opus 5.5 at
+xhigh (Anthropic), Gemini 4 Argon (Google), GPT-6.1 Sol (OpenAI), Grok 4.7
+(xAI), Kimi K3 (Moonshot), DeepSeek V4 (DeepSeek), GLM-5.2 (Z.ai) and
+Nemotron 3 Ultra (NVIDIA), in a random order each game. Claude and Gemini
+are called directly; the other six go through Perplexity's Agent API with
+one `PERPLEXITY_API_KEY`, under the provider-prefixed ids its changelog
+lists (`openai/gpt-6.1-sol`, `xai/grok-4.7`, `perplexity/kimi-k3`,
+`perplexity/deepseek-v4-flash-0731`, `zai/glm-5.2`,
+`perplexity/nemotron-3-ultra-550b-a55b`; `node runner/run.mjs
+--list-models perplexity` prints the current catalogue for your key, the
+place to check them). A seat whose call fails plays that decision by the
+rules-based bot and the call is logged as a fallback. No web search is
 requested from Perplexity, so a call costs only its tokens.
 
 Each player is a provider, a model id, an effort setting and optional
@@ -131,18 +133,23 @@ decision and is counted as a fallback.
 On the machine that holds the keys:
 
 ```bash
-cp runner/config.example.json runner/config.json   # edit site, players, models, efforts
 cat > runner/.env <<'ENV'
 SITE=https://monopoly-simulator.YOUR-ACCOUNT.workers.dev
 RUNNER_TOKEN=the same string as the secret
 ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 PERPLEXITY_API_KEY=...
-XIAOMI_API_KEY=...
-MISTRAL_API_KEY=...
 ENV
+node runner/run.mjs --list-models perplexity   # once: check the six Perplexity ids against your key
 node runner/run.mjs --loop
 ```
+
+That plays the default table, `runner/config.default.json`: the eight seats
+in a random order each game, Claude on the Anthropic API, Gemini on
+Google's, and ChatGPT, Grok, Kimi, DeepSeek, GLM and Nemotron through
+Perplexity's Agent API with the one key. To change players, models,
+efforts or the engine settings, copy it to `runner/config.json` (ignored
+by git) and edit that; the runner prefers it when it exists.
 
 `--loop` plays a batch of `games` from the config, pauses
 `pauseBetweenGamesMs`, and starts the next; `--games`, `--concurrency`,
@@ -223,7 +230,7 @@ src/worker.js                the Worker: /api/* over D1, assets for the rest
 src/aggregate.js             the statistics aggregations
 migrations/0001_init.sql     the schema
 runner/run.mjs               plays games and streams them to the site
-runner/config.example.json   the eight players
+runner/config.default.json   the default table: the eight players
 runner/config.bots.json      rule-based players, for local tests
 scripts/simulate.mjs         headless engine check
 scripts/check-replay.mjs     the replay reducer against the engine

@@ -1,0 +1,25 @@
+{
+  "site": "",
+  "note": "The default table, seated in a random order each game: Claude Opus 5.5 at xhigh on the Anthropic API and Gemini 4 Argon on Google's; GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3 Ultra through Perplexity's Agent API with the one PERPLEXITY_API_KEY, under the ids its changelog lists. Run node runner/run.mjs --list-models perplexity once to check those six ids against your key, and set the site in runner/.env (SITE=...). To change anything, copy this file to runner/config.json, which the runner prefers when it exists.",
+  "players": [
+    { "id": "claude",   "name": "Claude",   "provider": "anthropic",  "model": "claude-opus-5-5",                       "effort": "xhigh",  "colour": "#d97757" },
+    { "id": "gemini",   "name": "Gemini",   "provider": "google",     "model": "gemini-4-argon",                        "effort": "high",   "colour": "#4285f4" },
+    { "id": "chatgpt",  "name": "ChatGPT",  "provider": "perplexity", "model": "openai/gpt-6.1-sol",                    "effort": "high",   "colour": "#10a37f" },
+    { "id": "grok",     "name": "Grok",     "provider": "perplexity", "model": "xai/grok-4.7",                          "effort": "high",   "colour": "#111111" },
+    { "id": "kimi",     "name": "Kimi",     "provider": "perplexity", "model": "perplexity/kimi-k3",                    "effort": "high",   "colour": "#7c3aed" },
+    { "id": "deepseek", "name": "DeepSeek", "provider": "perplexity", "model": "perplexity/deepseek-v4-flash-0731",     "effort": "high",   "colour": "#4d6bfe" },
+    { "id": "glm",      "name": "GLM",      "provider": "perplexity", "model": "zai/glm-5.2",                           "effort": "high",   "colour": "#0ea5e9" },
+    { "id": "nemotron", "name": "Nemotron", "provider": "perplexity", "model": "perplexity/nemotron-3-ultra-550b-a55b", "effort": "high",   "colour": "#76b900" }
+  ],
+  "universal": "Play like a seasoned human player: talk to the table, negotiate hard, build alliances when useful, and never trade away a monopoly cheaply.",
+  "config": { "edition": "standard", "maxRounds": null, "auctionOnDecline": true, "bankAuction": true, "shuffleOrder": true, "freeParkingJackpot": false },
+  "games": 1,
+  "concurrency": 1,
+  "seed": null,
+  "maxTokens": 4000,
+  "timeoutSeconds": 600,
+  "apiConcurrency": 8,
+  "logPrompts": false,
+  "narrator": { "provider": "anthropic", "model": "claude-sonnet-5-5", "effort": "low" },
+  "pauseBetweenGamesMs": 60000
+}

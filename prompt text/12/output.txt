@@ -1,0 +1,22 @@
+The runner now plays a default table out of the box. With `runner/.env` holding the site address, the runner token and three keys, `node runner/run.mjs` seats, in a random order every game:
+
+- Claude Opus 5.5 at xhigh, on the Anthropic API
+- Gemini 4 Argon, on Google's API (Argon 4 is Google's name for it)
+- GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3 Ultra, all through Perplexity's Agent API on the one key
+
+Grok 4.7 is xAI's current top model; Grok 5 has not shipped. Nemotron 3 Ultra is NVIDIA's 550-billion-parameter flagship. For China I took the three that Perplexity serves: Kimi K3, DeepSeek V4 and GLM-5.2. MiMo-V2.6-Pro and Qwen 3.8 Max rank with them but are not in Perplexity's catalogue and would need their own keys. The six Perplexity ids come from its changelog, and the DeepSeek it hosts is the Flash build, so run the catalogue listing once before the first real game:
+
+```
+node runner/run.mjs --list-models perplexity
+```
+
+A seat whose id is wrong does not stop a game: that player's decisions fall back to the rules-based bot and the calls are logged as fallbacks. The six Perplexity seats run at high effort. Change any of it by copying the default file to `runner/config.json`, which the runner prefers when it exists.
+
+Verified before the push: the config loads and a short dry run seats all eight in a shuffled order, the simulator invariants, the replay check, the deploy dry run, the page rendered, and the headless viewer suite against a local Worker. Pushed to the branch and fast-forwarded to main.
+
+```
+Tag: v1.11  —  Title: The default table: eight frontier seats, one Perplexity key
+Description: The runner now plays a default table without any copying or editing: Claude Opus 5.5 at its highest effort and Gemini 4 Argon on their own APIs, with GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3 Ultra through Perplexity on one key, seated in a random order every game; an edited copy of the file still takes over when a different table is wanted.
+```
+
+Sources: [Gemini 4 Argon launch](https://www.androidauthority.com/gemini-4-argon-ai-model-launch-availability-3722792/), [Gemini 4 Argon model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon), [GPT-6.1 Sol](https://www.therundown.ai/tools/gpt-6-1-sol), [xAI release notes](https://docs.x.ai/developers/release-notes), [Grok 5 status](https://geotoolbox.ai/blog/grok-5), [Nemotron 3 Ultra](https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b), [Perplexity changelog](https://docs.perplexity.ai/docs/resources/changelog), [Perplexity model list](https://docs.perplexity.ai/api-reference/models-get), [Chinese models ranked](https://benchlm.ai/best/chinese-models).

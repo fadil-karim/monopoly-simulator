@@ -1,0 +1,9 @@
+make a default config
+
+all 8 models populated
+
+random starting order
+
+claude api, gmeini api and the rest from perplexity api
+
+i want opus 5.5 xhigh, argon 4, gpt 6.1 sol, and kimi k3, top models from china, top nemotron model, and whaterver is the equivalent to opus 5.5 on grok
