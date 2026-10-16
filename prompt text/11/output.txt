@@ -1,0 +1,8 @@
+The corners now carry their pictures: the car on Free Parking, the policeman on Go To Jail and the barred window on the Jail, each centred in the room above the lettering, with GO's arrow as before. The pictures of Chance, Community Chest, the stations and the utilities now sit in the middle of their squares, between the name at the inner edge and the price at the outer one, and on the left and right columns the price sits at the bottom of the square as it does along the top and bottom; the tokens on those columns moved back to the middle so they stay clear of it.
+
+Verified before the push: the simulator invariants, the replay check, the deploy dry run, the squares measured in headless Chromium at desktop and phone widths, the London, Mega and phone boards inspected, and the headless viewer suite against a local Worker, run twice, the second time on the final stylesheet. Pushed to the branch and fast-forwarded to main.
+
+```
+Tag: v1.10  —  Title: Car, policeman and bars on the corner squares
+Description: Free Parking now carries its car, Go To Jail its policeman and the Jail its bars, as on the printed board. The pictures of Chance, Community Chest, the stations and the utilities sit in the middle of their squares, and on the left and right columns the price sits at the bottom of the square, as it does along the top and bottom.
+```

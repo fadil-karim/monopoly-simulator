@@ -26,9 +26,10 @@ program the owner runs wherever the keys live.
   event feed and the model calls sit beside the board. The board has the
   printed board's proportions and pictures: large corner squares, tall
   property boxes, every name whole, centred and set at one size, Chance's
-  question mark, the chest, the locomotives, the bulb and the tap, GO in red
-  over its arrow, and the classic board's colours, the same in the dark
-  theme. Hovering a square shows its name large, and a Full screen button
+  question mark, the chest, the locomotives, the bulb and the tap in the
+  middle of their squares, the car, the policeman and the jail's bars on the
+  corners, GO in red over its arrow, and the classic board's colours, the
+  same in the dark theme. Hovering a square shows its name large, and a Full screen button
   (or the F key) shows the board alone across the window, Escape to leave.
 - **Games**: every game kept, newest first. Each opens with a replay: step
   back and forth event by event (arrow keys), play at one, four, fifteen or

@@ -1,8 +1,0 @@
-Every name on the board is now set at one size: the largest at which the longest word on the board, measured in the board's own face, still fits its square, under a base a little smaller than before. So Bow Street no longer out-sizes Marlborough Street, the short names sit on one line, and the prices, the buildings and the pictures take their sizes from the names. One very long word sets the size for the whole board, which is why the Dutch edition runs smaller than London. Hovering any square shows its name and price large in a label on the square's inner side, and a Full screen button in the game bar (or the F key) puts the board alone across the window, framed as on the page, with Escape, F or the corner button to come back.
-
-Verified before the push: the simulator invariants, the replay check, the deploy dry run, the squares measured in headless Chromium at desktop, laptop and phone widths in London and Dutch names, the full-screen viewer and the hover label at desktop size, and the headless viewer suite against a local Worker, which now also checks the hover label, the one size and the full-screen viewer. Pushed to the branch and fast-forwarded to main.
-
-```
-Tag: v1.9  —  Title: One lettering, names on hover, the board full screen
-Description: Every name on the board is now set at one size, a little smaller, chosen so that the longest word still fits its square, so Bow Street no longer out-sizes Marlborough Street and short names sit on one line; the prices and pictures follow it. Hovering any square shows its name and price large beside it, and a Full screen button in the game bar puts the board alone across the window, with Escape to come back.
-```

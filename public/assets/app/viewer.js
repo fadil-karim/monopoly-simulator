@@ -346,6 +346,12 @@ const ICONS = {
     '<svg class="ico" viewBox="0 0 24 32" aria-hidden="true" fill="currentColor"><path d="M12 1.5c.5 6-7 9.5-7 17.5a7 7 0 0 0 14 0c0-4-2.2-6.5-3.5-9-.5 2.5-1.5 3.5-2.5 4 .3-4-.5-8-1-12.5z"/></svg>',
   ],
 };
+// The corners' pictures: the car of Free Parking, the policeman of Go To Jail and the bars of the Jail.
+const CORNER_PICS = {
+  freeparking: '<svg class="pic" viewBox="0 0 64 36" aria-hidden="true"><g stroke="var(--board-ink)" stroke-width="2" stroke-linejoin="round"><path d="M4 24L8 15h10l6-8h18l8 8 8 2 2 7z" fill="var(--accent)"/><path d="M20 15l5-6h8v6zM36 9h5l5 6H36z" fill="var(--cell)" stroke-width="1.5"/></g><circle cx="16" cy="26" r="6" fill="var(--board-ink)"/><circle cx="48" cy="26" r="6" fill="var(--board-ink)"/><circle cx="16" cy="26" r="2.2" fill="#fff"/><circle cx="48" cy="26" r="2.2" fill="#fff"/></svg>',
+  gotojail: '<svg class="pic" viewBox="0 0 40 64" aria-hidden="true" fill="var(--board-ink)"><path d="M11 17a9 9 0 0 1 18 0v2H11z"/><rect x="9" y="18" width="22" height="3" rx="1.5"/><circle cx="20" cy="26" r="6"/><path d="M12 33h16l3 18H9z"/><path d="M12 35L2 41l1.6 3 10-5z"/><path d="M27 35l8-6 2 2.5-7 7z"/><rect x="13" y="50" width="5.5" height="13"/><rect x="21.5" y="50" width="5.5" height="13"/><rect x="11" y="41" width="18" height="2" fill="var(--cell)"/></svg>',
+  jail: '<svg class="pic" viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="3" width="42" height="42" rx="3" fill="var(--paper)" stroke="var(--board-ink)" stroke-width="3"/><path d="M13.5 3v42M24 3v42M34.5 3v42M3 24h42" stroke="var(--board-ink)" stroke-width="3"/><circle cx="19" cy="17" r="3.5" fill="var(--board-ink)"/><path d="M14 31a5 5 0 0 1 10 0v6H14z" fill="var(--board-ink)"/></svg>',
+};
 const GO_ARROW = '<svg class="goarrow" viewBox="0 0 100 26" aria-hidden="true"><path d="M98 8H27V2L2 13l25 11v-6h71z" fill="var(--accent)" stroke="var(--board-ink)" stroke-width="2.5" stroke-linejoin="round"/></svg>';
 // The width of a square's longest word in ems of its face (uppercase, with the letter-spacing), measured on a canvas, so the
 // stylesheet can size the label to keep the word whole; measured again once the font has loaded.
@@ -390,12 +396,13 @@ function renderBoard(game) {
     // the stylesheet sizes a label from its square and its longest word (--w letters) so the word stays whole; a one-word corner (GO) runs larger
     const oneWord = !/\s/.test(s.name.trim());
     const icon = s.type === 'chance' ? ICONS.chance : s.type === 'chest' ? ICONS.chest : s.type === 'station' ? ICONS.station : s.type === 'utility' ? ICONS.utility[/water/i.test(base[s.i].name) ? 1 : /gas/i.test(base[s.i].name) ? 2 : 0] : '';
-    const cls = ['cell', `side-${side}`, corner ? 'corner' : '', corner && oneWord ? 'one' : '', s.i === 0 ? 'go' : '', pr && pr.mortgaged ? 'mort' : '', s.price ? 'prop' : '', focus === s.i ? 'focus' : '', pinned === s.i ? 'pinned' : ''].filter(Boolean).join(' ');
+    const corpic = corner ? CORNER_PICS[s.type] || '' : '';
+    const cls = ['cell', `side-${side}`, corner ? 'corner' : '', corner && oneWord ? 'one' : '', s.i === 0 ? 'go' : '', icon || corpic ? 'pic' : '', pr && pr.mortgaged ? 'mort' : '', s.price ? 'prop' : '', focus === s.i ? 'focus' : '', pinned === s.i ? 'pinned' : ''].filter(Boolean).join(' ');
     const w = longestWord(s.name, s.i === 0 ? 800 : corner ? 700 : 600, s.i === 0 ? 0.04 : 0.01);
     // the band sits at the inner edge: before the text on the bottom and right sides, after it on the top and left; in a top
     // square the text runs price, picture, name so the name meets the band and the price the outer edge, as on the others
     const band = s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : '';
-    const parts = [`<div class="name">${esc(s.name)}</div>`, icon, s.price ? `<div class="price">${esc(M(s.price))}</div>` : '', bld ? `<div class="bld">${bld}</div>` : '', s.i === 0 ? GO_ARROW : ''];
+    const parts = [corpic, `<div class="name">${esc(s.name)}</div>`, icon, s.price ? `<div class="price">${esc(M(s.price))}</div>` : '', bld ? `<div class="bld">${bld}</div>` : '', s.i === 0 ? GO_ARROW : ''];
     const txt = `<div class="txt">${(side === 'top' && !corner ? parts.reverse() : parts).join('')}</div>`;
     html += `<div class="${cls}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};--w:${w};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
       ${side === 'bottom' || side === 'right' ? band : ''}

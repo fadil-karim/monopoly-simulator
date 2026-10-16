@@ -114,11 +114,17 @@ the floor breaks rather than clips, and one very long word, as on the
 Dutch board, sets the size for the whole board. A corner's label sits in
 the lower part of the square, with the tokens above it; GO is red with a
 black outline and the red arrow of the printed board under it, pointing
-the way round. Chance carries its question mark, Community Chest the
-chest, a station the locomotive and the utilities the bulb, the tap and,
-on the Mega board, the flame (`ICONS`: inline SVG, the question mark a
-styled `?`), between the name and the price; the heat board of the
-statistics page uses the same tracks and the same one size. Hovering any
+the way round; Free Parking carries the car, Go To Jail the policeman
+and the Jail its bars (`CORNER_PICS`), centred in the room above the
+label. Chance carries its question mark, Community Chest the chest, a
+station the locomotive and the utilities the bulb, the tap and, on the
+Mega board, the flame (`ICONS`: inline SVG, the question mark a styled
+`?`), centred in the middle of the square between the name at the inner
+edge and the price at the outer one (a square with a picture, class
+`pic`, gives its price no auto margin, so the picture's own take the
+room); on the left and right columns too the price sits at the bottom;
+the heat board of the statistics page uses the same tracks and the same
+one size. Hovering any
 square shows its name large, with the price, in a label (`#hover-name`,
 `showHoverName`) on the square's inner side, inside the board. The
 full-screen viewer (`#g-full` in the game bar, the F key, Escape or the
@@ -259,3 +265,4 @@ no new prompt leaves the archive untouched.
 | v1.7 | The corners of the board read whole | The four corner squares, GO, Jail, Free Parking and Go To Jail, no longer spill their words past the edge of the square: each corner's lettering now takes its size from the square itself and from its longest word, in every edition, with GO set larger as it is on the printed board. |
 | v1.8 | The squares take the printed board's shape | The board now has the printed board's proportions, with large corner squares and property boxes that stand tall along the top and bottom and lie wide at the sides, and every name and price is centred in its box with the name kept to whole words, however the window is sized. Chance, Community Chest, the stations and the utilities carry their pictures, and GO is lettered in red with a black outline and the arrow that points the way round the board. |
 | v1.9 | One lettering, names on hover, the board full screen | Every name on the board is now set at one size, a little smaller, chosen so that the longest word still fits its square, so Bow Street no longer out-sizes Marlborough Street and short names sit on one line; the prices and pictures follow it. Hovering any square shows its name and price large beside it, and a Full screen button in the game bar puts the board alone across the window, with Escape to come back. |
+| v1.10 | Car, policeman and bars on the corner squares | Free Parking now carries its car, Go To Jail its policeman and the Jail its bars, as on the printed board. The pictures of Chance, Community Chest, the stations and the utilities sit in the middle of their squares, and on the left and right columns the price sits at the bottom of the square, as it does along the top and bottom. |
