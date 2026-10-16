@@ -4,11 +4,11 @@
 import { GROUPS, EDITION_INFO, makeBoard } from './board.js';
 import { HOTEL, SKYSCRAPER } from './engine.js';
 import { ReplayGame } from './replay.js';
-import { StatsTracker, EXPECTED_ROLLS, meanRoll } from './stats.js';
+import { StatsTracker, EXPECTED_ROLLS, PAYMENT_KINDS, meanRoll } from './stats.js';
 import { fmtEvent, eventLine } from './transcript.js';
 import { barChart, hbarChart } from './analytics.js';
 import { NAME_SETS, nameSet, moneyIn, dressGame } from './names.js';
-import { modelName, apiName, fmtUsd } from './pricing.js';
+import { modelName, apiName, modelLogo, fmtUsd } from './pricing.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -71,6 +71,7 @@ async function openGame(id, { liveMode }) {
   const token = ++V.token;
   Object.assign(V, { id, meta: null, events: [], calls: [], callSeen: new Set(), cursor: 0, game: null, live: false, liveMode, pollTick: 0 });
   hovered = null; pinned = null;
+  resetLedgers();
   clearFeeds();
   gameControls();
   $('#g-title').textContent = id; $('#g-sub').textContent = 'loading…'; $('#g-status').textContent = ''; $('#g-status').className = 'status';
@@ -109,6 +110,7 @@ function showEmptyBoard(text) {
   renderCost(null);
   clearFeeds();
   renderBar();
+  ledgersChanged();
 }
 function addCalls(list) {
   let added = false;
@@ -126,7 +128,7 @@ function seek(n) {
   for (let k = V.cursor; k < n; k++) {
     const e = V.events[k];
     V.game.apply(e);
-    if (!big || k >= n - 250) appendLine(evFeed, `ev-${e.type}`, eventLine(e, V.game));
+    if (!big || k >= n - 250) appendLine(evFeed, `ev-${e.type}`, eventLine(e, V.game, V.game.round));
     if (e.type === 'chat') appendChat(chatFeed, e);
   }
   V.cursor = n;
@@ -169,7 +171,7 @@ let renderQueued = false;
 function queueRender() {
   if (renderQueued) return;
   renderQueued = true;
-  requestAnimationFrame(() => { renderQueued = false; fitBoard(); if (V.game) { renderBoard(V.game); renderPlayerCards(V.game); renderCost(V.game); } renderBar(); });
+  requestAnimationFrame(() => { renderQueued = false; fitBoard(); if (V.game) { renderBoard(V.game); renderPlayerCards(V.game); renderCost(V.game); } renderBar(); ledgersChanged(); refreshTip(); });
 }
 // Once the face has loaded, the words are measured again and the board drawn again, so the labels are sized to Jost and not to the fallback face.
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { wordWidth.clear(); if (V.game) queueRender(); else if ($('#board .cell')) showEmptyBoard(emptyText); });
@@ -208,6 +210,7 @@ function sizeNames(el) {
   el.style.setProperty('--name', px(name, 5, 12));
   el.style.setProperty('--cname', px(Math.min(cname, 0.175 * cornerW), 5, 20));
   el.style.setProperty('--gname', px(Math.min(gname, 0.34 * cornerW), 5, 36));
+  if (!heat) el.style.setProperty('--tok', px(el.clientWidth * 0.021, 9, 20));
 }
 window.addEventListener('resize', () => { fitBoard(); });
 function renderBar() {
@@ -390,6 +393,15 @@ const wordWidth = (() => {
   return f;
 })();
 const longestWord = (name, weight = 600, spacing = 0.01) => Math.max(0.5, ...name.split(/\s+/).filter(Boolean).map((w) => wordWidth(w, weight, spacing))).toFixed(2);
+// A player's token: the logo of its model's maker in a ring of the player's colour, or, for the rule-based bot and a
+// model without a logo here, the player's initial on the colour. A logo drawn for a dark tile (Kimi's white K) gets one.
+const LOGO_TILE = { kimi: '#000' };
+function tokenHtml(p) {
+  const meta = p.meta || {}, colour = esc(meta.colour || '#888');
+  const logo = modelLogo(meta.provider, meta.model);
+  return logo ? `<span class="tok logo" style="--pc:${colour};--logo:url(/assets/logos/${logo}.svg)${LOGO_TILE[logo] ? `;--logo-bg:${LOGO_TILE[logo]}` : ''}" title="${esc(p.name)}"></span>`
+    : `<span class="tok" style="background:${colour}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`;
+}
 function renderBoard(game) {
   const board = $('#board');
   const per = game.perSide, n = per + 1;
@@ -411,7 +423,7 @@ function renderBoard(game) {
     let bld = '';
     if (pr && pr.level) bld = pr.level === SKYSCRAPER ? 'SKY' : pr.level === HOTEL ? 'HOTEL' : '▲'.repeat(pr.level);
     if (pr && pr.depot) bld += ' DEPOT';
-    const toks = (tokensAt[s.i] || []).map((p) => `<span class="tok" style="background:${esc(colourOf[p.id])}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`).join('');
+    const toks = (tokensAt[s.i] || []).map(tokenHtml).join('');
     const side = row === n ? 'bottom' : col === 1 ? 'left' : row === 1 ? 'top' : 'right';
     // the stylesheet sizes a label from its square and its longest word (--w letters) so the word stays whole; a one-word corner (GO) runs larger
     const oneWord = !/\s/.test(s.name.trim());
@@ -483,7 +495,7 @@ function propertyPanel(game, st, i) {
     const p = game.player(id);
     return `<li><span class="dot" style="background:${esc(p && p.meta.colour || '#888')}"></span>${esc(p ? p.name : id)} <b>${money(amt)}</b></li>`;
   }).join('');
-  const ledger = ps.ledger.slice().reverse().map((l) => `<li><span class="r">r${l.round}</span> ${esc(l.text)}</li>`).join('');
+  const ledger = ps.ledger.slice().reverse().map((l) => `<li><span class="r">r${l.round}</span> ${esc(deedLine(game, l))}</li>`).join('');
   let state = '';
   if (pr.level) state = pr.level === SKYSCRAPER ? 'skyscraper' : pr.level === HOTEL ? 'hotel' : `${pr.level} house${pr.level > 1 ? 's' : ''}`;
   if (pr.depot) state += (state ? ', ' : '') + 'depot';
@@ -502,7 +514,28 @@ function propertyPanel(game, st, i) {
     </div>
   </div>`;
 }
-// A small histogram of roll totals 2–12 with the two-dice expectation drawn over it.
+// The deed's history of a property, one line an entry, in the edition and currency the board is read as.
+const levelName = (n) => (n === SKYSCRAPER ? 'a skyscraper' : n === HOTEL ? 'a hotel' : n === 1 ? 'one house' : n ? `${n} houses` : 'no buildings');
+const nameOf = (game, id) => (id === 'bank' ? 'the bank' : (game.player(id) || { name: id || '?' }).name);
+const offerText = (game, o) => [...(o.props || []).map((i) => (game.board[i] ? game.sqName(i) : `square ${i}`)), ...(o.cash ? [money(o.cash)] : [])].join(' and ') || 'nothing';
+function deedLine(game, l) {
+  const who = nameOf(game, l.player), other = nameOf(game, l.other);
+  switch (l.kind) {
+    case 'purchase': return `Bought by ${who} for ${money(l.amount)}`;
+    case 'auction': return `Won at auction by ${who} for ${money(l.amount)}`;
+    case 'mortgage': return `${who} mortgaged it for ${money(l.amount)}`;
+    case 'unmortgage': return `${who} unmortgaged it for ${money(l.amount)}`;
+    case 'build': return `${who} built up to ${levelName(l.level)} for ${money(l.amount)}`;
+    case 'depot': return `${who} built a depot for ${money(l.amount)}`;
+    case 'sell': return `${who} sold a building for ${money(l.amount)}, down to ${levelName(l.level)}`;
+    case 'returned': return `Back to the bank when ${who} went bankrupt`;
+    case 'handover': return `Passed from ${who} to ${other} in bankruptcy`;
+    case 'trade': return `Traded by ${who} to ${other} for ${offerText(game, l.gets || {})}`;
+    default: return l.text || l.kind;
+  }
+}
+// A small histogram of roll totals 2–12 with the two-dice expectation drawn over it. Each total is a column the
+// pointer can rest on, whatever the bar's height, and the label says how many of the rolls it was (showTip).
 function rollChart(h, w, hh) {
   const total = h.reduce((a, b) => a + b, 0);
   const bw = w / 11;
@@ -512,8 +545,7 @@ function rollChart(h, w, hh) {
     const x = (t - 2) * bw;
     const share = total ? h[t] / total : 0;
     const bh = (share / peak) * (hh - 14);
-    bars += `<rect x="${(x + 1).toFixed(1)}" y="${(hh - 12 - bh).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${bh.toFixed(1)}" rx="1"><title>${t}: ${h[t]} (${total ? (share * 100).toFixed(1) : 0}%)</title></rect>`;
-    bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${hh - 2}" text-anchor="middle">${t}</text>`;
+    bars += `<g class="col" data-t="${t}" data-n="${h[t]}" data-total="${total}"><rect class="hit" x="${x.toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${hh}"/><rect class="bar" x="${(x + 1).toFixed(1)}" y="${(hh - 12 - bh).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${bh.toFixed(1)}" rx="1"/><text x="${(x + bw / 2).toFixed(1)}" y="${hh - 2}" text-anchor="middle">${t}</text></g>`;
     pts.push(`${(x + bw / 2).toFixed(1)},${(hh - 12 - (EXPECTED_ROLLS[t] / peak) * (hh - 14)).toFixed(1)}`);
   }
   return `<svg class="rollchart" viewBox="0 0 ${w} ${hh}" width="${w}" height="${hh}" role="img" aria-label="Distribution of roll totals">${bars}<polyline points="${pts.join(' ')}" fill="none"/></svg>`;
@@ -597,6 +629,261 @@ function renderCost(game) {
   $('#cost-total').textContent = any || !called ? `${fmtUsd(total)} ${atEnd ? 'in all' : V.live ? 'so far' : 'to this move'}` : '';
 }
 
+// ---- the ledgers under the game: every payment, every trade offer and how it ended, every property ----
+// They follow the move shown, drawn from its statistics (stats.js) a few times a second at most and only while they
+// are on screen, so a fast replay costs nothing while they are out of sight.
+const OUTCOMES = { completed: 'Completed', rejected: 'Rejected', lapsed: 'Lapsed', refused: 'Refused by the rules', open: 'Under way' };
+const L = { payPlayer: '', payKind: '', payShow: 100, tradePlayer: '', tradeOutcome: '', tradeShow: 40, sort: 'i', dir: 1, visible: false, dirty: true, timer: null, last: 0, sig: {}, players: '' };
+const ledgersEl = $('#ledgers');
+if ('IntersectionObserver' in window) new IntersectionObserver((es) => { L.visible = es.some((x) => x.isIntersecting); if (L.visible && L.dirty) scheduleLedgers(); }, { rootMargin: '400px' }).observe(ledgersEl);
+else L.visible = true;
+function resetLedgers() { Object.assign(L, { payShow: 100, tradeShow: 40, sig: {}, players: '' }); }
+function ledgersChanged() { ledgersEl.classList.toggle('hidden', !V.game); L.dirty = true; scheduleLedgers(); }
+function scheduleLedgers() {
+  if (!L.visible || L.timer) return;
+  L.timer = setTimeout(() => { L.timer = null; L.last = Date.now(); L.dirty = false; if (V.game) renderLedgers(V.game); }, Math.max(0, 400 - (Date.now() - L.last)));
+}
+const renderLedgersNow = () => { if (V.game) renderLedgers(V.game); };
+// A player in a ledger: the dot of their colour and their name; the bank by name. A refused offer may name its
+// counterparty as the model wrote it, so a name is looked up too.
+const resolveId = (game, x) => (game.player(x) ? x : (game.players.find((p) => p.name.toLowerCase() === String(x || '').toLowerCase()) || { id: x }).id);
+function who(game, id) {
+  if (id === 'bank') return '<span class="bankname">Bank</span>';
+  const p = game.player(id);
+  return `<span class="who"><span class="dot" style="background:${esc(p && p.meta.colour || '#888')}"></span>${esc(p ? p.name : id || '?')}</span>`;
+}
+function renderLedgers(game) {
+  const st = statsOf(game);
+  const ids = game.players.map((p) => p.id).join(',');
+  if (ids !== L.players) {
+    L.players = ids;
+    const opts = game.players.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+    $('#pay-player').innerHTML = `<option value="">Everyone</option>${opts}<option value="bank">The bank</option>`;
+    $('#trade-player').innerHTML = `<option value="">Everyone</option>${opts}`;
+    if (L.payPlayer !== 'bank' && !game.player(L.payPlayer)) L.payPlayer = '';
+    if (!game.player(L.tradePlayer)) L.tradePlayer = '';
+    $('#pay-player').value = L.payPlayer; $('#trade-player').value = L.tradePlayer;
+  }
+  renderPayments(game, st);
+  renderTrades(game, st);
+  renderProperties(game, st);
+}
+// What a payment was for, in the edition and currency the board is read as.
+function paymentFor(game, x) {
+  const sq = (i) => (i != null && game.board[i] ? game.sqName(i) : 'a property');
+  const T = (t) => (game.displayText ? game.displayText(t || '') : t || '');
+  const N = (n) => (game.displayName ? game.displayName(n) : n);
+  switch (x.kind) {
+    case 'rent': return `Rent for ${sq(x.property)}`;
+    case 'salary': return `Passing ${game.sqName(0)}`;
+    case 'tax': return N(x.text);
+    case 'card': return `Card: “${T(x.text)}”`;
+    case 'repairs': return 'Repairs, from a card';
+    case 'purchase': return `Bought ${sq(x.property)}`;
+    case 'auction': return `Won ${sq(x.property)} at auction`;
+    case 'build': return x.depot ? `A depot on ${sq(x.property)}` : `Building on ${sq(x.property)}, up to ${levelName(x.level)}`;
+    case 'sell': return `Building sold on ${sq(x.property)}, down to ${levelName(x.level)}`;
+    case 'mortgage': return `Mortgaged ${sq(x.property)}`;
+    case 'unmortgage': return `Unmortgaged ${sq(x.property)}`;
+    case 'jail': return 'Fine to leave jail';
+    case 'trade': return 'Cash in a trade';
+    case 'bankruptcy': return `Bankruptcy: ${x.text || 'cash handed over'}`;
+    case 'parking': return `The ${N('Free Parking')} pot`;
+    case 'gift': return 'Birthday gift';
+    default: return T(x.text) || 'Other';
+  }
+}
+// Who paid whom, in all: a row a payer, a column a payee, the bank the last of each.
+function payMatrix(game, list) {
+  const ids = [...game.players.map((p) => p.id), 'bank'];
+  const cell = {}, out = {}, inn = {};
+  for (const x of list) { const k = `${x.from}>${x.to}`; cell[k] = (cell[k] || 0) + x.amount; out[x.from] = (out[x.from] || 0) + x.amount; inn[x.to] = (inn[x.to] || 0) + x.amount; }
+  const head = ids.map((id) => `<th class="num">${id === 'bank' ? 'Bank' : esc(nameOf(game, id))}</th>`).join('');
+  const rows = ids.map((a) => `<tr><th>${who(game, a)}</th>${ids.map((b) => (a === b ? '<td class="num self"></td>' : `<td class="num">${cell[`${a}>${b}`] ? esc(money(cell[`${a}>${b}`])) : '<span class="nil">·</span>'}</td>`)).join('')}<td class="num"><b>${esc(money(out[a] || 0))}</b></td></tr>`).join('');
+  return `<table class="matrix"><thead><tr><th>From ↓ to →</th>${head}<th class="num">Paid in all</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr><th>Received in all</th>${ids.map((b) => `<td class="num"><b>${esc(money(inn[b] || 0))}</b></td>`).join('')}<td></td></tr></tfoot></table>`;
+}
+function renderPayments(game, st) {
+  const sig = [V.id, namesId, st.payments.length, L.payPlayer, L.payKind, L.payShow, L.players].join('|');
+  if (L.sig.pay === sig) return;
+  L.sig.pay = sig;
+  const byKind = L.payKind ? st.payments.filter((x) => x.kind === L.payKind) : st.payments;
+  const mine = L.payPlayer ? byKind.filter((x) => x.from === L.payPlayer || x.to === L.payPlayer) : byKind;
+  $('#pay-matrix').innerHTML = byKind.length ? payMatrix(game, byKind) : '';
+  $('#pay-matrix-head').classList.toggle('hidden', !byKind.length);
+  const rows = [];
+  for (let k = mine.length - 1; k >= 0 && rows.length < L.payShow; k--) {
+    const x = mine[k];
+    rows.push(`<tr><td class="num r">r${x.round}</td><td class="from">${who(game, x.from)}</td><td class="to">${who(game, x.to)}</td><td class="num amt"><b>${esc(money(x.amount))}</b></td><td class="for">${esc(paymentFor(game, x))}</td></tr>`);
+  }
+  $('#pay-table').innerHTML = mine.length ? `<table class="ledger"><thead><tr><th class="num">Round</th><th>From</th><th>To</th><th class="num">Amount</th><th>For</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+    : `<p class="muted">${st.payments.length ? 'No payment matches.' : 'No money has changed hands yet.'}</p>`;
+  const total = mine.reduce((a, x) => a + x.amount, 0);
+  let sum = `${mine.length.toLocaleString()} payment${mine.length === 1 ? '' : 's'}, ${money(total)}`;
+  if (L.payPlayer) {
+    const paid = mine.filter((x) => x.from === L.payPlayer).reduce((a, x) => a + x.amount, 0);
+    sum += ` · ${L.payPlayer === 'bank' ? 'the bank' : nameOf(game, L.payPlayer)} paid ${money(paid)} and received ${money(total - paid)}`;
+  }
+  $('#pay-sum').textContent = sum;
+  const more = mine.length - rows.length;
+  $('#pay-more').classList.toggle('hidden', more <= 0);
+  $('#pay-more').textContent = `Show ${Math.min(more, 200).toLocaleString()} more (${more.toLocaleString()} left)`;
+}
+function stepHtml(game, s) {
+  const by = `<b>${esc(nameOf(game, resolveId(game, s.by)))}</b>`;
+  const T = (t) => esc((game.displayText ? game.displayText(t) : t).replace(/\bproperty (\d+)\b/g, (m, i) => (game.board[i] && game.board[i].price ? game.sqName(Number(i)) : m)));
+  const rule = s.source && String(s.source).startsWith('heuristic') ? ' <span class="muted">(rule-based)</span>' : '';
+  const why = s.reason && !/^heuristic/.test(s.reason) ? ` <span class="why">— ${T(s.reason)}</span>` : '';
+  const said = s.message ? ` <span class="said">“${T(s.message)}”</span>` : '';
+  const terms = () => `${esc(offerText(game, s.give))} for ${esc(offerText(game, s.get))}`;
+  switch (s.kind) {
+    case 'offer': return `${by} offers ${terms()}${said}`;
+    case 'counter': return `${by} counters with ${terms()}${said}${why}${rule}`;
+    case 'accept': return `${by} accepts${why}${rule}`;
+    case 'reject': return `${by} rejects it${why}${rule}`;
+    case 'lapsed': return 'No deal: the counter-offers ran out';
+    case 'refused': return `${by} offered ${esc(nameOf(game, resolveId(game, s.to)))} ${terms()}${said}, refused by the rules: ${T(s.reason)}`;
+    default: return esc(s.kind);
+  }
+}
+function outcomeHtml(game, n) {
+  const badge = `<span class="badge ${esc(n.outcome)}">${esc(OUTCOMES[n.outcome] || n.outcome)}</span>`;
+  if (n.outcome !== 'completed' || !n.terms) return badge;
+  const t = n.terms;
+  return `${badge}<div class="terms">${esc(nameOf(game, t.from))} gave ${esc(offerText(game, t.give))}<br>${esc(nameOf(game, t.to))} gave ${esc(offerText(game, t.get))}</div>`;
+}
+function renderTrades(game, st) {
+  const all = st.negotiations, last = all[all.length - 1];
+  const sig = [V.id, namesId, all.length, last ? `${last.steps.length}${last.outcome}` : '', L.tradePlayer, L.tradeOutcome, L.tradeShow, L.players].join('|');
+  if (L.sig.trade === sig) return;
+  L.sig.trade = sig;
+  const pid = L.tradePlayer;
+  const list = all.filter((n) => (!L.tradeOutcome || n.outcome === L.tradeOutcome) && (!pid || n.from === pid || resolveId(game, n.to) === pid));
+  const rows = [];
+  for (let k = list.length - 1; k >= 0 && rows.length < L.tradeShow; k--) {
+    const n = list[k];
+    rows.push(`<tr><td class="num r">r${n.round}</td><td class="between">${who(game, n.from)}<span class="arrow">→</span>${who(game, resolveId(game, n.to))}</td><td class="talk"><ol class="steps">${n.steps.map((x) => `<li>${stepHtml(game, x)}</li>`).join('')}</ol></td><td class="end">${outcomeHtml(game, n)}</td></tr>`);
+  }
+  $('#trade-table').innerHTML = list.length ? `<table class="ledger trades"><thead><tr><th class="num">Round</th><th>Between</th><th>The offer and the answers</th><th>Outcome</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+    : `<p class="muted">${all.length ? 'No negotiation matches.' : 'Nobody has offered a trade yet.'}</p>`;
+  const count = (o) => all.filter((n) => n.outcome === o).length;
+  const counters = all.reduce((a, n) => a + n.steps.filter((x) => x.kind === 'counter').length, 0);
+  const done = all.filter((n) => n.outcome === 'completed' && n.terms);
+  const props = done.reduce((a, n) => a + n.terms.give.props.length + n.terms.get.props.length, 0);
+  const cash = done.reduce((a, n) => a + n.terms.give.cash + n.terms.get.cash, 0);
+  const ends = [['completed', 'completed'], ['rejected', 'rejected'], ['lapsed', 'lapsed'], ['refused', 'refused by the rules'], ['open', 'under way']].filter(([o]) => o === 'completed' || count(o)).map(([o, w]) => `${count(o)} ${w}`).join(', ');
+  $('#trade-sum').textContent = all.length ? `${all.length.toLocaleString()} offer${all.length === 1 ? '' : 's'}: ${ends} · ${counters} counter-offer${counters === 1 ? '' : 's'} · ${props} propert${props === 1 ? 'y' : 'ies'} and ${money(cash)} changed hands` : '';
+  const more = list.length - rows.length;
+  $('#trade-more').classList.toggle('hidden', more <= 0);
+  $('#trade-more').textContent = `Show ${Math.min(more, 100).toLocaleString()} more (${more.toLocaleString()} left)`;
+}
+// Every property: who holds it now, how often it has been landed on, the rent it has brought in, what was paid for it
+// and for its buildings, and how often it was mortgaged and traded. A heading sorts by its column.
+const PROP_COLS = [
+  ['i', 'Property', 1], ['owner', 'Owner', 1], ['landings', 'Landings', -1], ['rent', 'Rent', -1], ['perLanding', 'Rent a landing', -1],
+  ['firstPrice', 'Bought for', -1], ['buildSpend', 'Buildings', -1], ['mortgages', 'Mortgaged', -1], ['trades', 'Traded', -1], ['owners', 'Owners', -1], ['net', 'Rent less cost', -1],
+];
+const PROP_TIPS = {
+  perLanding: 'The rent it has brought in, divided by the times a token has landed on it',
+  firstPrice: 'What it first fetched from the bank, at its price or at auction',
+  buildSpend: 'Paid to the bank for its houses, hotels and depots, with how many were bought',
+  owners: 'How many players have held it',
+  net: 'Rent brought in, less what was paid for it at the bank and for its buildings, plus the buildings sold back',
+};
+const signed = (n) => (n < 0 ? `−${money(-n)}` : money(n));
+function renderProperties(game, st) {
+  const sig = [V.id, namesId, game.events.length, L.sort, L.dir].join('|');
+  if (L.sig.prop === sig) return;
+  L.sig.prop = sig;
+  const rows = Object.keys(st.props).map(Number).filter((i) => game.board[i]).map((i) => {
+    const x = st.props[i], pr = game.props[i] || {};
+    return { i, x, pr, owner: pr.owner ? nameOf(game, pr.owner) : '~', landings: x.landings, rent: x.rent, perLanding: x.landings ? x.rent / x.landings : 0, firstPrice: x.firstPrice == null ? -1 : x.firstPrice, buildSpend: x.buildSpend, mortgages: x.mortgages, trades: x.trades, owners: x.owners.length, net: x.rent - x.paid - x.buildSpend + x.saleRefund };
+  });
+  const key = L.sort, dir = L.dir;
+  rows.sort((a, b) => { const va = a[key], vb = b[key]; const c = typeof va === 'string' ? va.localeCompare(vb) : va - vb; return (c || a.i - b.i) * dir; });
+  const head = PROP_COLS.map(([k, label, d]) => `<th class="${k === 'i' || k === 'owner' ? '' : 'num '}sortable${L.sort === k ? ' sorted' : ''}" data-sort="${k}" data-dir="${d}" aria-sort="${L.sort === k ? (L.dir > 0 ? 'ascending' : 'descending') : 'none'}"${PROP_TIPS[k] ? ` title="${esc(PROP_TIPS[k])}"` : ''}>${esc(label)}${L.sort === k ? (L.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
+  const body = rows.map(({ i, x, pr }) => {
+    const s = game.board[i];
+    const colour = s.group && GROUPS[s.group] ? GROUPS[s.group].colour : '#8c8c8c';
+    let state = pr.level ? levelName(pr.level) : '';
+    if (pr.depot) state += `${state ? ', ' : ''}a depot`;
+    if (pr.mortgaged) state += `${state ? ', ' : ''}mortgaged`;
+    const net = x.rent - x.paid - x.buildSpend + x.saleRefund;
+    return `<tr>
+      <td><span class="sw" style="background:${esc(colour)}"></span>${esc(game.sqName(i))}</td>
+      <td>${pr.owner ? who(game, pr.owner) : '<span class="muted">the bank</span>'}${state ? `<div class="muted">${esc(state)}</div>` : ''}</td>
+      <td class="num">${x.landings}</td>
+      <td class="num"><b>${esc(money(x.rent))}</b></td>
+      <td class="num">${x.landings ? esc(money(Math.round(x.rent / x.landings))) : '–'}</td>
+      <td class="num">${x.firstPrice == null ? '–' : `${esc(money(x.firstPrice))}${x.firstHow === 'auction' ? ' <span class="muted">at auction</span>' : ''}${x.purchases > 1 ? ` <span class="muted">(${x.purchases} sales)</span>` : ''}`}</td>
+      <td class="num">${x.buildSpend ? `${esc(money(x.buildSpend))} <span class="muted">(${x.builds})</span>` : '–'}</td>
+      <td class="num">${x.mortgages || '–'}</td>
+      <td class="num">${x.trades || '–'}</td>
+      <td class="num">${x.owners.length || '–'}</td>
+      <td class="num ${net < 0 ? 'neg' : ''}">${x.firstPrice == null && !x.rent ? '–' : esc(signed(net))}</td>
+    </tr>`;
+  }).join('');
+  const t = rows.reduce((a, r) => ({ landings: a.landings + r.x.landings, rent: a.rent + r.x.rent, build: a.build + r.x.buildSpend, builds: a.builds + r.x.builds, mortgages: a.mortgages + r.x.mortgages, trades: a.trades + r.x.trades }), { landings: 0, rent: 0, build: 0, builds: 0, mortgages: 0, trades: 0 });
+  $('#prop-table').innerHTML = `<table class="ledger props"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>
+    <tfoot><tr><td>All ${rows.length} properties</td><td></td><td class="num"><b>${t.landings}</b></td><td class="num"><b>${esc(money(t.rent))}</b></td><td class="num">${t.landings ? esc(money(Math.round(t.rent / t.landings))) : '–'}</td><td></td><td class="num"><b>${esc(money(t.build))}</b> <span class="muted">(${t.builds})</span></td><td class="num">${t.mortgages}</td><td class="num">${t.trades}</td><td></td><td></td></tr></tfoot></table>`;
+  const owned = rows.filter((r) => r.pr.owner).length;
+  $('#prop-sum').textContent = `${owned} of ${rows.length} owned · ${t.landings.toLocaleString()} landings · ${money(t.rent)} in rent`;
+}
+$('#pay-kind').innerHTML = `<option value="">Every kind</option>${Object.entries(PAYMENT_KINDS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}`;
+$('#trade-outcome').innerHTML = `<option value="">Every outcome</option>${Object.entries(OUTCOMES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}`;
+$('#pay-player').addEventListener('change', (e) => { L.payPlayer = e.target.value; L.payShow = 100; renderLedgersNow(); });
+$('#pay-kind').addEventListener('change', (e) => { L.payKind = e.target.value; L.payShow = 100; renderLedgersNow(); });
+$('#pay-more').addEventListener('click', () => { L.payShow += 200; renderLedgersNow(); });
+$('#trade-player').addEventListener('change', (e) => { L.tradePlayer = e.target.value; L.tradeShow = 40; renderLedgersNow(); });
+$('#trade-outcome').addEventListener('change', (e) => { L.tradeOutcome = e.target.value; L.tradeShow = 40; renderLedgersNow(); });
+$('#trade-more').addEventListener('click', () => { L.tradeShow += 100; renderLedgersNow(); });
+$('#prop-table').addEventListener('click', (e) => {
+  const th = e.target.closest('th[data-sort]');
+  if (!th) return;
+  if (L.sort === th.dataset.sort) L.dir = -L.dir; else { L.sort = th.dataset.sort; L.dir = Number(th.dataset.dir) || 1; }
+  renderLedgersNow();
+});
+
+// ---- the roll charts' label: how many rolls of a total, out of all the rolls ----
+// Resting the pointer on a column, or tapping it on a phone, shows the total, how many of the rolls it was and the
+// share two fair dice would give; the board's centre and the cards are drawn again as the game moves, and the label
+// follows what is under the pointer then.
+const tip = document.createElement('div');
+tip.className = 'tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
+document.body.appendChild(tip);
+let tipAt = null, tipTouch = false;
+const colAt = (el) => (el && el.closest ? el.closest('.rollchart .col') : null);
+function showTip(col, x, y) {
+  const t = Number(col.dataset.t), n = Number(col.dataset.n), total = Number(col.dataset.total);
+  tip.innerHTML = `<b>${t}</b> rolled ${n.toLocaleString()} time${n === 1 ? '' : 's'} out of ${total.toLocaleString()} roll${total === 1 ? '' : 's'}${total ? ` · ${(n / total * 100).toFixed(1)}%` : ''}<span>two fair dice give ${(EXPECTED_ROLLS[t] * 100).toFixed(1)}%</span>`;
+  tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = x + 14, top = y - h - 12;
+  if (left + w > window.innerWidth - 8) left = x - w - 14;
+  if (top < 8) top = y + 18;
+  tip.style.left = `${Math.max(8, left)}px`; tip.style.top = `${Math.max(8, top)}px`;
+}
+function hideTip() { tip.hidden = true; tipAt = null; }
+function refreshTip() {
+  if (!tipAt) return;
+  const col = colAt(document.elementFromPoint(tipAt.x, tipAt.y));
+  if (col) showTip(col, tipAt.x, tipAt.y); else hideTip();
+}
+document.addEventListener('pointermove', (ev) => {
+  if (ev.pointerType === 'touch') return;
+  const col = colAt(ev.target);
+  tipTouch = false;
+  if (col) { tipAt = { x: ev.clientX, y: ev.clientY }; showTip(col, ev.clientX, ev.clientY); } else if (tipAt) hideTip();
+});
+document.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType !== 'touch') return;
+  const col = colAt(ev.target);
+  tipTouch = true;
+  if (col) { tipAt = { x: ev.clientX, y: ev.clientY }; showTip(col, ev.clientX, ev.clientY); } else hideTip();
+});
+// the page moving under a still mouse brings another column, or none, under it; a tapped label goes with the scroll
+window.addEventListener('scroll', () => { if (tipAt) { if (tipTouch) hideTip(); else refreshTip(); } }, { passive: true });
+
 // Hover shows a property in the centre; a click keeps it there until clicked again.
 const boardEl = $('#board');
 function cellIndex(ev) { const c = ev.target.closest('.cell.prop'); return c ? Number(c.dataset.i) : null; }
@@ -627,6 +914,8 @@ function hideHoverName() { hoverName.hidden = true; }
 boardEl.addEventListener('mouseover', (ev) => {
   const cell = ev.target.closest('.cell');
   if (cell) showHoverName(cell); else hideHoverName();
+  // in the centre the match comes back, so its figures and its roll chart can be hovered, unless a square was clicked to keep its deed there
+  if (!cell && ev.target.closest('.centre')) { if (hovered != null) { hovered = null; markFocus(); if (V.game && pinned == null) renderCentre(V.game); } return; }
   const i = cellIndex(ev); if (i == null || i === hovered) return; hovered = i; markFocus(); if (V.game && pinned == null) renderCentre(V.game);
 });
 boardEl.addEventListener('mouseleave', () => { hideHoverName(); hovered = null; markFocus(); if (V.game && pinned == null) renderCentre(V.game); });

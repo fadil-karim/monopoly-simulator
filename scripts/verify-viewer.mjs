@@ -7,11 +7,16 @@
 //   node scripts/verify-viewer.mjs                  (screenshots in .render-check/viewer/)
 //
 // It checks the live tab, the replay controls, the games list, both statistics
-// pages, a live game played slowly by the bots while the page follows it, and
-// the phone layout. PLAYWRIGHT_MODULE and CHROME_PATH point it at a browser
-// when playwright is not installed in this repository.
+// pages, a live game played slowly by the bots while the page follows it, the
+// ledgers under a game against the statistics worked out here from its events,
+// the roll charts' label and the phone layout; with a trading game seeded by
+// scripts/seed-trades.mjs, the trades ledger and the models' logos on the tokens
+// too. PLAYWRIGHT_MODULE and CHROME_PATH point it at a browser when playwright
+// is not installed in this repository.
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { ReplayGame } from '../public/assets/app/replay.js';
+import { StatsTracker } from '../public/assets/app/stats.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const out = process.env.OUT || '.render-check/viewer';
 mkdirSync(out, { recursive: true });
@@ -145,14 +150,87 @@ await page.selectOption('#names-select', 'netherlands'); await page.waitForSelec
 must(/Kalverstraat/i.test(await text('#stats')) && / €/.test(await text('#stats')), 'the Dutch board with euros after the amount');
 await page.selectOption('#names-select', 'london'); await wait(200);
 must(await page.$eval('#names-select', (el) => el.value) === 'london', 'back to London');
-// 10. dark mode
+// 10. the ledgers under the game, the roll charts' label and the models' logos, against the statistics worked out
+// here from the game's own events
+const n$ = (x) => x.toLocaleString('en-US');
+async function statsOfGame(id) {
+  const meta = await (await fetch(`${url}api/games/${encodeURIComponent(id)}`)).json();
+  const evs = [];
+  for (let after = 0; ;) { const r = await (await fetch(`${url}api/games/${encodeURIComponent(id)}/events?after=${after}&limit=2000`)).json(); evs.push(...r.events); after = r.nextAfter; if (r.done) break; }
+  const g = new ReplayGame({ id: meta.id, edition: meta.edition, config: meta.config, seed: meta.seed, players: meta.players }).applyAll(evs);
+  return { meta, g, st: new StatsTracker(g).update() };
+}
+const toEnd = () => page.waitForFunction(() => { const m = document.querySelector('#r-info').innerText.match(/event (\d+) of (\d+)/); return m && m[1] === m[2]; }, null, { timeout: 20000 });
+const latestNow = (await (await fetch(url + 'api/live')).json()).latest;
+const { g: lg, st: want } = await statsOfGame(latestNow.id);
+await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.evaluate(() => document.querySelector('#ledgers').scrollIntoView()); await wait(900);
+must(!(await hidden('#ledgers')), 'the ledgers sit under the game');
+must(new RegExp(`^${n$(want.payments.length)} payments`).test(await text('#pay-sum')), 'every payment counted: ' + await text('#pay-sum'));
+must((await page.$$('#pay-table tbody tr')).length === Math.min(100, want.payments.length), 'the newest hundred payments listed');
+must((await page.$$('#pay-matrix tbody tr')).length === lg.players.length + 1, 'who paid whom: a row for each player and one for the bank');
+const p0 = lg.players[0];
+await page.selectOption('#pay-player', p0.id); await wait(250);
+const involved = await page.$$eval('#pay-table tbody tr', (trs) => trs.map((tr) => `${tr.children[1].innerText}|${tr.children[2].innerText}`));
+must(involved.length > 0 && involved.every((r) => r.includes(p0.name)), `the player filter keeps ${p0.name}'s payments`);
+await page.selectOption('#pay-player', ''); await page.selectOption('#pay-kind', 'rent'); await wait(250);
+must(await page.$$eval('#pay-table tbody tr td:last-child', (tds) => tds.length > 0 && tds.every((td) => /^Rent for /.test(td.innerText))), 'the kind filter keeps the rent');
+must(new RegExp(`^${n$(want.payments.filter((x) => x.kind === 'rent').length)} payment`).test(await text('#pay-sum')), 'the rent payments counted: ' + await text('#pay-sum'));
+await page.selectOption('#pay-kind', ''); await wait(250);
+if (want.payments.length > 100) { await page.click('#pay-more'); await wait(250); must((await page.$$('#pay-table tbody tr')).length === Math.min(300, want.payments.length), 'show more lists two hundred more'); }
+must(/Nobody has offered a trade yet/.test(await text('#trade-table')) === !want.negotiations.length, 'the trades card: ' + (await text('#trade-sum') || 'no offers, as the bots never trade'));
+must((await page.$$('#prop-table tbody tr')).length === Object.keys(want.props).length, `a row for each of the ${Object.keys(want.props).length} properties`);
+await page.click('#prop-table th[data-sort="rent"]'); await wait(250);
+const rents = await page.$$eval('#prop-table tbody tr td:nth-child(4)', (tds) => tds.map((td) => Number(td.innerText.replace(/[^0-9]/g, ''))));
+must(rents.every((v, k) => !k || rents[k - 1] >= v) && rents[0] === Math.max(...Object.values(want.props).map((x) => x.rent)), 'a click on Rent sorts the properties by rent, highest first');
+must((await text('#prop-sum')).includes(n$(want.match.rent)), 'the rent adds up: ' + await text('#prop-sum'));
+await page.screenshot({ path: `${out}/ledgers.png`, fullPage: true });
+await page.evaluate(() => window.scrollTo(0, 0)); await wait(250);
+await page.hover('.cell[data-i="39"]'); await wait(120);
+const mid$ = await page.$eval('#board', (b) => { const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+await page.mouse.move(mid$.x, mid$.y); await wait(150);
+const h7 = await (await page.$('#centre .rollchart .col[data-t="7"] .hit')).boundingBox();
+await page.mouse.move(h7.x + h7.width / 2, h7.y + 3); await wait(150);
+const tip7 = await page.$eval('.tip', (t) => (t.hidden ? '' : t.innerText));
+must(new RegExp(`^7 rolled ${n$(want.match.rolls[7])} times? out of ${n$(want.match.rollCount)} rolls`).test(tip7), 'over the centre, the roll chart says how many sevens out of all the rolls: ' + tip7.split('\n')[0]);
+await page.screenshot({ path: `${out}/roll-label.png` });
+await page.mouse.move(5, 5); await wait(100);
+must(await page.$eval('.tip', (t) => t.hidden), 'the label goes with the pointer');
+must((await page.$$('.tok.logo')).length === 0 && (await page.$$('.tok')).length > 0, "the bots' tokens keep their initials");
+const seeded = (await (await fetch(url + 'api/games?limit=200')).json()).games.find((x) => x.id.startsWith('trades-'));
+if (!seeded) console.log('skip the trading game: node scripts/seed-trades.mjs puts one on the local site for the trades ledger and the logos');
+else {
+  const { g: tg, st: tw } = await statsOfGame(seeded.id);
+  await page.goto(url + '#game/' + encodeURIComponent(seeded.id)); await toEnd();
+  await page.click('#r-first'); await wait(250);
+  must((await page.$$('.cell[data-i="0"] .tok.logo')).length === tg.players.length, `every model's token wears its maker's logo on ${tg.board[0].name}`);
+  const logos = await page.$$eval('.tok.logo', (ts) => [...new Set(ts.map((t) => getComputedStyle(t).backgroundImage.match(/url\("?([^")]+)/)[1]))]);
+  must(logos.length === new Set(tg.players.map((p) => `${p.meta.provider}/${p.meta.model}`)).size, `a logo for each model: ${logos.map((u) => u.split('/').pop()).join(', ')}`);
+  for (const u of logos) { const r = await fetch(new URL(u, url)); must(r.ok && /svg/.test(r.headers.get('content-type')), `the logo ${u.split('/').pop()} is served`); }
+  await page.screenshot({ path: `${out}/logos.png` });
+  await page.click('#r-last'); await wait(300);
+  await page.evaluate(() => document.querySelector('#trade-table').scrollIntoView()); await wait(900);
+  must(new RegExp(`^${n$(tw.negotiations.length)} offers: ${tw.negotiations.filter((x) => x.outcome === 'completed').length} completed`).test(await text('#trade-sum')), 'every offer and its end counted: ' + await text('#trade-sum'));
+  must((await page.$$('#trade-table tbody tr')).length === Math.min(40, tw.negotiations.length), 'the newest forty negotiations listed');
+  must(/counters with/.test(await text('#trade-table')) && /accepts/.test(await text('#trade-table')) && /refused by the rules/i.test(await text('#trade-table')), 'counter-offers, answers and refused offers are in the ledger');
+  await page.selectOption('#trade-outcome', 'completed'); await wait(250);
+  must(await page.$$eval('#trade-table tbody tr', (trs) => trs.length > 0 && trs.every((tr) => /COMPLETED/i.test(tr.querySelector('.badge').innerText) && / gave /.test(tr.innerText))), 'the outcome filter keeps the trades done, each with what changed hands');
+  await page.selectOption('#trade-outcome', ''); await page.selectOption('#pay-kind', 'trade'); await wait(250);
+  must(new RegExp(`^${n$(tw.payments.filter((x) => x.kind === 'trade').length)} payment`).test(await text('#pay-sum')), 'the cash in trades is in the payments: ' + await text('#pay-sum'));
+  await page.selectOption('#pay-kind', '');
+  await page.screenshot({ path: `${out}/trades.png`, fullPage: true });
+}
+// 11. dark mode
 await page.emulateMedia({ colorScheme: 'dark' }); await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 await page.screenshot({ path: `${out}/live-dark.png` });
 await page.emulateMedia({ colorScheme: 'light' });
-// 11. phone
+// 12. phone
 await page.setViewportSize({ width: 390, height: 844 }); await wait(300);
 await page.screenshot({ path: `${out}/live-mobile.png`, fullPage: true });
 must(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no sideways scroll on a phone');
+await page.evaluate(() => document.querySelector('#ledgers').scrollIntoView()); await wait(900);
+await page.screenshot({ path: `${out}/ledgers-mobile.png` });
+must(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'the ledgers keep to the phone\'s width');
 await browser.close();
 if (errors.length) { console.error('page errors:', errors); process.exit(1); }
 console.log('viewer ok');

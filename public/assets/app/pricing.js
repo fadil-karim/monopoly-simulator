@@ -51,6 +51,17 @@ export function modelName(provider, model) {
   return BY_MODEL[model] || BY_MODEL[bare] || BY_MODEL[bare.slice(bare.lastIndexOf('/') + 1)] || model;
 }
 
+// The logo of the model's maker, a file under /assets/logos/ (the board's tokens wear it), found from the model id
+// and then the provider; null for the rule-based bot and a model whose maker has none here.
+const LOGOS = [[/claude|anthropic/, 'claude'], [/gemini|google/, 'gemini'], [/grok|xai|x-ai/, 'grok'], [/gpt|openai|chatgpt|\bo\d/, 'openai'], [/kimi|moonshot/, 'kimi'], [/nemotron|nvidia/, 'nvidia'], [/mimo|xiaomi/, 'mimo'], [/qwen/, 'qwen'], [/deepseek/, 'deepseek'], [/glm|zai|z-ai|zhipu/, 'glm'], [/mistral|magistral/, 'mistral']];
+export function modelLogo(provider, model) {
+  if (provider === 'heuristic') return null;
+  for (const text of [String(model || '').toLowerCase(), String(provider || '').toLowerCase()]) {
+    for (const [re, logo] of LOGOS) if (re.test(text)) return logo;
+  }
+  return null;
+}
+
 // The price in force for a model on a day: the player's own price when given, else the list.
 export function priceFor(provider, model, at = new Date(), override = null) {
   if (override && Number.isFinite(Number(override.input)) && Number.isFinite(Number(override.output))) return override;

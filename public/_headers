@@ -16,6 +16,10 @@
 /assets/style/*
   Cache-Control: public, max-age=0, must-revalidate
 
+# The models' logos on the tokens change rarely: a day in the cache, never immutable.
+/assets/logos/*
+  Cache-Control: public, max-age=86400
+
 # HTML must stay fresh so a deploy is visible immediately.
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
