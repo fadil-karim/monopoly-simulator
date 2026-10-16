@@ -72,6 +72,7 @@ async function openGame(id, { liveMode }) {
   Object.assign(V, { id, meta: null, events: [], calls: [], callSeen: new Set(), cursor: 0, game: null, live: false, liveMode, pollTick: 0 });
   hovered = null; pinned = null;
   clearFeeds();
+  gameControls();
   $('#g-title').textContent = id; $('#g-sub').textContent = 'loading…'; $('#g-status').textContent = ''; $('#g-status').className = 'status';
   $('#g-link').href = `#game/${gid(id)}`;
   try {
@@ -217,13 +218,28 @@ function renderBar() {
   $('#r-play').textContent = V.playing ? '⏸' : '▶';
   $('#r-follow').parentElement.classList.toggle('hidden', !V.live);
   const st = $('#g-status');
-  if (!V.meta) { st.textContent = ''; st.className = 'status'; return; }
+  if (!V.meta) { st.textContent = ''; st.className = 'status'; gameControls(); return; }
   if (V.live) { st.textContent = V.follow && V.cursor === n ? 'LIVE' : 'RUNNING'; st.className = 'status live'; }
   else if (V.meta.status === 'finished') { st.textContent = 'FINISHED'; st.className = 'status done'; }
   else { st.textContent = V.meta.status.toUpperCase(); st.className = 'status'; }
   $('#g-title').textContent = V.meta.id;
   const m = V.meta;
   $('#g-sub').textContent = `${EDITION_INFO[m.edition] ? EDITION_INFO[m.edition].label : m.edition} · ${fmtDate(m.startedAt)}${m.winnerName ? ` · ${m.winnerName} wins after ${m.rounds} rounds (${m.endReason})` : m.status === 'running' ? ` · round ${V.game ? V.game.round : m.rounds}` : ''}`;
+  gameControls();
+}
+// The replay controls belong to a game opened from the list; the Live tab follows its game with none, and a
+// finished game shown there is offered as a replay instead. Full screen and the link show only with a game on
+// the table. The board is fitted again whenever the bar comes or goes, since it changes the room left.
+function gameControls() {
+  const onTable = !!(V.game && V.meta);
+  const replay = onTable && !V.liveMode;
+  const bar = $('#replay');
+  const changed = bar.classList.contains('hidden') === replay;
+  bar.classList.toggle('hidden', !replay);
+  $('#g-full').classList.toggle('hidden', !onTable);
+  $('#g-link').classList.toggle('hidden', !onTable);
+  if (onTable) $('#g-link').textContent = V.liveMode && V.meta.status !== 'running' ? 'Replay this game' : 'Link to this game';
+  if (changed) fitBoard();
 }
 // ---- the replay controls ----
 function stopPlay() { V.playing = false; clearInterval(V.timer); V.timer = null; }
@@ -251,6 +267,7 @@ $('#r-speed').addEventListener('change', () => { if (V.playing) { stopPlay(); to
 $('#r-follow').addEventListener('change', (e) => { V.follow = e.target.checked; if (V.follow) { stopPlay(); seek(V.events.length); } else renderBar(); });
 document.addEventListener('keydown', (e) => {
   if (!$('#view-game').classList.contains('active') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (V.liveMode && !['f', 'F', 'Escape'].includes(e.key)) return; // the Live tab has no replay
   if (e.key === 'ArrowLeft') { stopPlay(); unfollow(); seek(V.cursor - 1); e.preventDefault(); }
   else if (e.key === 'ArrowRight') { stopPlay(); unfollow(); seek(V.cursor + 1); e.preventDefault(); }
   else if (e.key === ' ') { unfollow(); togglePlay(); e.preventDefault(); }
@@ -315,8 +332,8 @@ async function openLive() {
     const pick = $('#g-pick'), wrap = $('#g-pick-wrap');
     pick.innerHTML = r.running.map((g) => `<option value="${esc(g.id)}">${esc(g.id)} · round ${g.rounds}</option>`).join('');
     wrap.classList.toggle('hidden', r.running.length < 2);
-    if (r.running.length) { if (V.id !== r.running[0].id || !V.live) openGame(r.running[0].id, { liveMode: true }); }
-    else if (r.latest) { if (V.id !== r.latest.id) openGame(r.latest.id, { liveMode: true }); notice('No game is being played right now. This is the latest one; the table comes back to life here when the next game starts.'); }
+    if (r.running.length) { if (V.id !== r.running[0].id || !V.live || !V.liveMode) openGame(r.running[0].id, { liveMode: true }); }
+    else if (r.latest) { if (V.id !== r.latest.id || !V.liveMode) openGame(r.latest.id, { liveMode: true }); notice('No game is being played right now. This is the latest one; the table comes back to life here when the next game starts.'); }
     else { notice(health.db ? 'No games yet. The first one appears here as soon as the runner starts it.' : 'The site has no database yet, so there is nothing to show.'); $('#g-sub').textContent = ''; $('#g-title').textContent = ''; showEmptyBoard('No games yet'); }
   } catch (e) { notice(e.status === 503 ? 'The site has no database yet, so there is nothing to show.' : `Could not reach the site: ${e.message}`); $('#g-title').textContent = ''; $('#g-sub').textContent = ''; showEmptyBoard('No game to show'); }
   liveTimer = setInterval(() => { if (!V.live) openLive(); }, 15000);

@@ -1,0 +1,28 @@
+Both changes are released as v1.17. The Live tab no longer has the replay controls, and the runner now says why it can't reach the site.
+
+**The Live tab.** It now just follows the game as it's played, with no play, step, speed or slider controls. Those appear only when someone opens an older game from the Games list. When the table is quiet, the Live tab shows the last finished game with a "Replay this game" button that opens it with the controls. With no game at all, as in your screenshot, Full screen and the link are gone too, and the board takes the room.
+
+**The "fetch failed" error.** Your screenshot shows the site answering in your browser, and "No games yet" means its database is up. So the trouble is on your Mac's side, and "fetch failed" was Node hiding the real reason. To see it now, run this in Terminal:
+
+```
+node -e "fetch('https://monopoly.basilicalabs.ai/api/health').then(r=>r.text()).then(console.log,e=>console.log(e.cause))"
+```
+
+After a git pull, the runner prints the same reason itself, with what to check:
+- **The address doesn't resolve.** Your Mac may still remember the domain from before it existed. Flushing its DNS cache fixes that:
+
+  ```
+  sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
+  ```
+
+- **A certificate error.** A new domain's certificate can take a few minutes to arrive, or a VPN, proxy or antivirus may be intercepting the connection.
+- **Nothing answered.** Usually a VPN or proxy that your browser goes through but Node doesn't.
+
+If what it prints isn't clear, paste it here.
+
+Verified before the push:
+- Each kind of failure was reproduced locally: a name that doesn't resolve, a refused connection, a page that isn't the site's API and an untrusted certificate. Each now names its reason, and a model call that can't reach its API carries the reason too.
+- The Live tab was checked with no games, with the last finished game and with a game running. The controls appear only on an older game's page.
+- The viewer suite, the provider tests, the simulator, the replay check and the deploy dry run all pass, and two bot games ran against the local site.
+
+Your screenshot is kept with this version's records.

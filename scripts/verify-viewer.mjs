@@ -21,6 +21,8 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = []; page.on('pageerror', (e) => errors.push('pageerror: ' + e.message)); page.on('console', (m) => { if (m.type() === 'error' && !/status of 404/.test(m.text())) errors.push('console: ' + m.text()); }); // a missing game answers 404 by design
 const must = (c, msg) => { if (!c) throw new Error('FAILED: ' + msg); console.log('ok  ' + msg); };
 const text = (sel) => page.evaluate((s) => (document.querySelector(s) || { innerText: '' }).innerText, sel);
+const hidden = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return !el || el.classList.contains('hidden') || !el.offsetParent; }, sel);
+const at = () => page.evaluate(() => document.querySelector('#r-info').textContent); // kept up to date while the bar is hidden
 const wait = (ms) => page.waitForTimeout(ms);
 // 1. live tab with no running game: the latest finished game
 const liveNow = await (await fetch(url + 'api/live')).json();
@@ -29,7 +31,9 @@ const list = await (await fetch(url + 'api/games?limit=50')).json();
 await page.goto(url); await page.waitForFunction(() => /FINISHED|LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must(/No game is being played right now/.test(await text('#notice')), 'live tab says the table is quiet and shows the latest game');
 must(/FINISHED/.test(await text('#g-status')), 'status reads FINISHED');
-must(new RegExp(`event ${N} of ${N}`).test(await text('#r-info')), 'replay sits at the end: ' + await text('#r-info'));
+must(await hidden('#replay'), 'the Live tab shows no replay controls');
+must(/Replay this game/.test(await text('#g-link')) && (await page.getAttribute('#g-link', 'href')) === `#game/${encodeURIComponent(L.id)}`, 'the finished game is offered as a replay');
+must(new RegExp(`event ${N} of ${N}`).test(await at()), 'the board sits at the end: ' + await at());
 must(new RegExp(`round ${L.rounds} · turn ${L.turns}`).test(await text('#centre')), 'centre shows the final round and turn');
 must(/GOES|Goes/.test(await text('#centre')) && new RegExp('Winner: ' + L.winnerName).test(await text('#centre')), 'match stats and the winner in the centre');
 must((await page.$$('#player-cards .pcard')).length === L.players.length, `a card for each of the ${L.players.length} players`); // the latest game sets the count: the pool draw seats any number up to eight
@@ -37,7 +41,9 @@ if (L.players.some((p) => p.bankrupt)) must(/BANKRUPT/i.test(await text('#player
 const rect = await page.evaluate(() => { const r = document.querySelector('.board-wrap').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
 must(rect, 'board fully inside the window');
 await page.screenshot({ path: `${out}/live-latest.png` });
-// 2. replay controls
+// 2. replay controls, on the older game's own page
+await page.click('#g-link'); await page.waitForFunction(() => !document.querySelector('#replay').classList.contains('hidden') && /event \d+ of/.test(document.querySelector('#r-info').innerText), null, { timeout: 20000 });
+must(new RegExp(`event ${N} of ${N}`).test(await text('#r-info')) && /Link to this game/.test(await text('#g-link')), 'opened as a replay, the controls show, at the end');
 await page.click('#r-first'); await wait(200);
 must(new RegExp(`event 0 of ${N}`).test(await text('#r-info')), 'first: event 0');
 must(/round 0 · turn 0/.test(await text('#centre')), 'board at the start');
@@ -103,21 +109,24 @@ await page.screenshot({ path: `${out}/models.png`, fullPage: true });
 const runner = spawn('node', ['runner/run.mjs', '--config', 'runner/config.bots.json', '--token', 'local-dev-token', '--games', '1', '--seed', '77', '--max-rounds', '12', '--delay', '250'], { stdio: 'inherit' });
 await wait(2500);
 await page.goto(url + '#live'); await page.waitForFunction(() => /LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
-must(await page.evaluate(() => document.querySelector('#r-follow').checked), 'following live by default');
-const a = Number((await text('#r-info')).match(/event (\d+)/)[1]); await wait(5000);
-const b = Number((await text('#r-info')).match(/event (\d+)/)[1]);
+must(await page.evaluate(() => document.querySelector('#r-follow').checked) && await hidden('#replay'), 'following live, with no replay controls');
+must(/Link to this game/.test(await text('#g-link')) && !(await hidden('#g-full')), 'a running game keeps full screen and its link');
+const a = Number((await at()).match(/event (\d+)/)[1]); await wait(5000);
+const b = Number((await at()).match(/event (\d+)/)[1]);
 must(b > a, `events keep arriving while live: ${a} → ${b}`);
 must(/LIVE/.test(await text('#g-status')), 'status reads LIVE');
 await page.screenshot({ path: `${out}/live.png` });
 await new Promise((r) => runner.on('exit', r));
 await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 30000 });
 must(/wins after 12 rounds/.test(await text('#g-sub')), 'the live game finished in view: ' + await text('#g-sub'));
-const fin = await text('#r-info');
+const fin = await at();
 await wait(2500);
-must(fin === await text('#r-info') && /GAME OVER/.test(await text('#events')), 'polling stopped at the end with the final event in the feed');
+must(fin === await at() && /GAME OVER/.test(await text('#events')), 'polling stopped at the end with the final event in the feed');
+must(await hidden('#replay') && /Replay this game/.test(await text('#g-link')), 'the finished live game is offered as a replay, still with no controls');
 // 9. the board when there is no game, and the edition selector
 await page.goto(url + '#game/does-not-exist'); await page.waitForFunction(() => /no game called/.test(document.querySelector('#notice').innerText), null, { timeout: 15000 });
 must((await page.$$('#board .cell')).length === 40 && /MONOPOLY/.test(await text('#centre')) && /No such game/.test(await text('#centre')), 'the empty board shows every square');
+must(await hidden('#replay') && await hidden('#g-full') && await hidden('#g-link'), 'no replay, full screen or link without a game');
 must(/Old Kent Road/i.test(await text('#board')) && /Mayfair/i.test(await text('#board')), 'London names on the empty board');
 await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must((await page.$$('#names-select option')).length === 7, 'the edition dropdown lists seven editions');

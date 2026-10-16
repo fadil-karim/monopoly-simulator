@@ -144,7 +144,12 @@ number of models, each label whole). A price changes by adding a period to
 
 The viewer (`public/assets/app/viewer.js`) routes by hash: `#live` (the
 running game, following as events arrive, or the latest finished one; polls
-`/api/live` every 15 s to pick up the next game), `#games`, `#game/<id>`
+`/api/live` every 15 s to pick up the next game; no replay controls, at the
+owner's request: `gameControls` shows the replay bar only on `#game/<id>`,
+Full screen and the link only while a game is on the table, the link reading
+"Replay this game" for a finished game on the Live tab, the replay keys do
+nothing there, and a game already open from the list is opened again in live
+mode), `#games`, `#game/<id>`
 (the replay: ⏮ ◀ ▶ ▶| ⏭, speeds of 1/4/15/60 events a second or a turn a
 second, a slider over every event, arrow keys and space, "follow live"),
 `#stats`, `#models`, `#about`. It loads a game's events and calls in pages,
@@ -350,3 +355,4 @@ no new prompt leaves the archive untouched.
 | v1.14 | A pool of models, eight drawn to each table | Every game now seats up to eight models drawn at random from the pool in the config, never the same model twice, so the pool can grow past eight and no model ever plays against itself; a pool smaller than the seats plays whole. Qwen3.8 Max is back in the pool beside DeepSeek V4 Pro, so nine models take turns at the table of eight. |
 | v1.15 | A dashboard on your own machine to run the table | Running the games no longer needs a config file or a terminal full of flags: one command opens a page on your machine with the site, the token, a key box for every provider in the pool, the pool itself with each provider's catalogue a click away, the seats and the rest, and Start, Stop and the runner's progress, with the keys kept only for the run unless you choose to remember them. |
 | v1.16 | Each model's bill for every game, database included | Every game now shows what it cost, seat by seat: each model by name, the API that served it and the dollars its calls came to, with the game's total in the games list and each model's average cost a game in the model statistics. The site also creates its own database when it deploys and lays out its tables itself, so the only setup left is the runner's token, and the runner and its dashboard already know the site's address. |
+| v1.17 | A quieter Live tab, and errors that say why | The Live tab now simply follows the game, without the replay controls: they appear only when you open an older game, which a finished game on the Live tab offers with a Replay this game button, and the full-screen and link buttons step aside when there is no game on the table. When the runner cannot reach the site, or a model's service, it now says why, whether the address does not resolve, the certificate is not trusted or nothing answers, and what to check. |

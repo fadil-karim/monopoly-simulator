@@ -15,7 +15,9 @@ program the owner runs wherever the keys live.
 ## What visitors get
 
 - **Live**: the game being played now, following along as events arrive, or
-  the latest game when the table is quiet. The board fills the window; its
+  the latest game when the table is quiet, with no replay controls: the Live
+  tab only follows, and a finished game shown there offers "Replay this
+  game" to open it with them. The board fills the window; its
   centre carries the match (goes, purchases, trades, cash on the table, money
   to and from the bank and between players, how the dice have fallen) with
   the dice and the last event boxed beneath; hover a property for its owner,
@@ -31,7 +33,8 @@ program the owner runs wherever the keys live.
   corners, GO in red over its arrow, and the classic board's colours, the
   same in the dark theme. Hovering a square shows its name large, and a Full screen button
   (or the F key) shows the board alone across the window, Escape to leave.
-- **Games**: every game kept, newest first. Each opens with a replay: step
+- **Games**: every game kept, newest first. Each opens with a replay, the
+  only place the replay controls appear: step
   back and forth event by event (arrow keys), play at one, four, fifteen or
   sixty events a second or a turn a second, drag the slider to any moment,
   or jump to the end.
