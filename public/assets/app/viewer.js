@@ -172,9 +172,38 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { wo
 // The board takes the height left under the bars above it, so the whole of it is in view.
 function fitBoard() {
   const wrap = $('.board-wrap');
-  if (!wrap || !$('#view-game').classList.contains('active')) return;
-  const top = wrap.getBoundingClientRect().top + window.scrollY;
-  wrap.style.setProperty('--board-size', `${Math.max(320, window.innerHeight - top - 14)}px`);
+  if (wrap && wrap.classList.contains('full')) wrap.style.setProperty('--board-size', `${Math.min(window.innerWidth, window.innerHeight) - 46}px`);
+  else if (wrap && $('#view-game').classList.contains('active')) {
+    const top = wrap.getBoundingClientRect().top + window.scrollY;
+    wrap.style.setProperty('--board-size', `${Math.max(320, window.innerHeight - top - 14)}px`);
+  }
+  for (const b of document.querySelectorAll('#board, .heat')) sizeNames(b);
+}
+// One size for every name on a board, so the labels read alike: the largest at which the longest word of every square
+// (--w, measured by the renderer) still fits its own box, under a base that follows the board's width; the corners the
+// same among themselves, and a one-word corner (GO) larger. Set on the board as --name, --cname and --gname.
+function sizeNames(el) {
+  const cells = [...el.querySelectorAll('.cell, .hcell')];
+  if (!cells.length || !el.clientWidth) return;
+  const heat = el.classList.contains('heat');
+  const base = Math.min(heat ? 11 : 12, Math.max(6, el.clientWidth * (heat ? 0.012 : 0.0118)));
+  const pads = {};
+  const avail = (c) => {
+    const box = c.querySelector('.txt') || c;
+    const key = c.classList.contains('corner') ? 'corner' : (c.className.match(/side-\w+/) || ['x'])[0];
+    if (pads[key] == null) { const cs = getComputedStyle(box); pads[key] = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight); }
+    return box.clientWidth - pads[key];
+  };
+  let name = base, cname = Infinity, gname = Infinity, cornerW = 0;
+  for (const c of cells) {
+    const fit = avail(c) / (parseFloat(c.style.getPropertyValue('--w')) || 6);
+    if (heat || !c.classList.contains('corner')) name = Math.min(name, fit);
+    else { cornerW = c.clientWidth; if (c.classList.contains('one')) gname = Math.min(gname, fit); else cname = Math.min(cname, fit); }
+  }
+  const px = (v, lo, hi) => `${Math.max(lo, Math.min(hi, v)).toFixed(2)}px`;
+  el.style.setProperty('--name', px(name, 5, 12));
+  el.style.setProperty('--cname', px(Math.min(cname, 0.175 * cornerW), 5, 20));
+  el.style.setProperty('--gname', px(Math.min(gname, 0.34 * cornerW), 5, 36));
 }
 window.addEventListener('resize', () => { fitBoard(); });
 function renderBar() {
@@ -224,6 +253,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === ' ') { unfollow(); togglePlay(); e.preventDefault(); }
   else if (e.key === 'Home') { stopPlay(); unfollow(); seek(0); }
   else if (e.key === 'End') { stopPlay(); seek(V.events.length); }
+  else if (e.key === 'f' || e.key === 'F') toggleFull();
+  else if (e.key === 'Escape' && wrapEl.classList.contains('full')) leaveFull();
 });
 // ---- following a running game ----
 function startPoll() { stopPoll(); V.pollTimer = setInterval(pollOnce, 2000); }
@@ -325,7 +356,7 @@ const wordWidth = (() => {
     const k = `${weight}|${spacing}|${word}`;
     if (!cache.has(k)) {
       ctx.font = `${weight} 100px Jost, system-ui, sans-serif`;
-      cache.set(k, (ctx.measureText(word.toUpperCase()).width / 100) * 1.03 + spacing * word.length);
+      cache.set(k, (ctx.measureText(word.toUpperCase()).width / 100) * 1.015 + spacing * word.length);
     }
     return cache.get(k);
   };
@@ -376,6 +407,7 @@ function renderBoard(game) {
   }
   html += '<div class="centre" id="centre"></div>';
   board.innerHTML = html;
+  sizeNames(board);
   renderCentre(game);
 }
 function renderCentre(game) {
@@ -497,8 +529,48 @@ function markFocus() {
   for (const c of boardEl.querySelectorAll('.cell.focus')) if (Number(c.dataset.i) !== focus) c.classList.remove('focus');
   if (focus != null) { const c = boardEl.querySelector(`.cell[data-i="${focus}"]`); if (c) c.classList.add('focus'); }
 }
-boardEl.addEventListener('mouseover', (ev) => { const i = cellIndex(ev); if (i == null || i === hovered) return; hovered = i; markFocus(); if (V.game && pinned == null) renderCentre(V.game); });
-boardEl.addEventListener('mouseleave', () => { hovered = null; markFocus(); if (V.game && pinned == null) renderCentre(V.game); });
+// Hovering any square shows its name large, in a label on the square's inner side, so the small lettering never has to be read.
+const hoverName = $('#hover-name');
+function showHoverName(cell) {
+  const wrap = $('.board-wrap');
+  const name = cell.querySelector('.name'), price = cell.querySelector('.price');
+  hoverName.innerHTML = `${esc(name ? name.textContent : cell.title)}${price ? `<span class="p">${esc(price.textContent)}</span>` : ''}`;
+  hoverName.hidden = false;
+  const wr = wrap.getBoundingClientRect(), cr = cell.getBoundingClientRect();
+  const ox = wr.left + wrap.clientLeft, oy = wr.top + wrap.clientTop, gap = 6;
+  const lw = hoverName.offsetWidth, lh = hoverName.offsetHeight;
+  let left = cr.left - ox + cr.width / 2 - lw / 2, top = cr.top - oy + cr.height / 2 - lh / 2;
+  if (cell.classList.contains('side-bottom')) top = cr.top - oy - lh - gap;
+  else if (cell.classList.contains('side-top')) top = cr.bottom - oy + gap;
+  else if (cell.classList.contains('side-left')) left = cr.right - ox + gap;
+  else if (cell.classList.contains('side-right')) left = cr.left - ox - lw - gap;
+  hoverName.style.left = `${Math.max(gap, Math.min(wrap.clientWidth - lw - gap, left))}px`;
+  hoverName.style.top = `${Math.max(gap, Math.min(wrap.clientHeight - lh - gap, top))}px`;
+}
+function hideHoverName() { hoverName.hidden = true; }
+boardEl.addEventListener('mouseover', (ev) => {
+  const cell = ev.target.closest('.cell');
+  if (cell) showHoverName(cell); else hideHoverName();
+  const i = cellIndex(ev); if (i == null || i === hovered) return; hovered = i; markFocus(); if (V.game && pinned == null) renderCentre(V.game);
+});
+boardEl.addEventListener('mouseleave', () => { hideHoverName(); hovered = null; markFocus(); if (V.game && pinned == null) renderCentre(V.game); });
+// The full-screen viewer: the board alone, as large as the window allows, left with Escape, the F key or the corner
+// button; the browser's own full-screen mode is asked for too where it exists, so the page's chrome goes as well.
+const wrapEl = $('.board-wrap');
+function enterFull() {
+  wrapEl.classList.add('full'); document.body.classList.add('board-full');
+  if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+  fitBoard(); queueRender();
+}
+function leaveFull() {
+  wrapEl.classList.remove('full'); document.body.classList.remove('board-full');
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  fitBoard(); queueRender();
+}
+const toggleFull = () => (wrapEl.classList.contains('full') ? leaveFull() : enterFull());
+$('#g-full').addEventListener('click', toggleFull);
+$('#fs-exit').addEventListener('click', leaveFull);
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && wrapEl.classList.contains('full')) leaveFull(); });
 boardEl.addEventListener('click', (ev) => {
   const i = cellIndex(ev);
   if (i == null) { if (ev.target.closest('.centre') && pinned != null) { pinned = null; queueRender(); } return; }
@@ -544,7 +616,8 @@ function heatBoard(ed, squares, key, label) {
     const v = squares[s.i] ? squares[s.i][key] || 0 : 0;
     const a = v / max;
     const name = nameAt(ed, s.i, s.name);
-    return `<div class="hcell ${s.i % per === 0 ? 'corner' : ''}" style="grid-row:${row};grid-column:${col};--w:${longestWord(name)};--heat:${(a * 0.85).toFixed(3)};color:${a > 0.55 ? '#fff' : 'var(--text)'}" title="${esc(name)}: ${v}"><span class="hn">${esc(name)}</span><span class="hv">${v}</span></div>`;
+    const side = row === n ? 'side-bottom' : col === 1 ? 'side-left' : row === 1 ? 'side-top' : 'side-right';
+    return `<div class="hcell ${side} ${s.i % per === 0 ? 'corner' : ''}" style="grid-row:${row};grid-column:${col};--w:${longestWord(name)};--heat:${(a * 0.85).toFixed(3)};color:${a > 0.55 ? '#fff' : 'var(--text)'}" title="${esc(name)}: ${v}"><span class="hn">${esc(name)}</span><span class="hv">${v}</span></div>`;
   }).join('');
   return `<div class="heat" style="grid-template-columns:${boardTracks(per)};grid-template-rows:${boardTracks(per)}">${cells}<div class="hcentre"><div class="mlogo"><span>MONOPOLY</span></div><div class="k">${esc(label)}</div></div></div>`;
 }
@@ -578,6 +651,7 @@ async function loadStats() {
         </tbody></table></div></div>`;
     }
     el.innerHTML = html;
+    for (const h of el.querySelectorAll('.heat')) sizeNames(h);
   } catch (e) { el.innerHTML = `<div class="card"><p class="muted">${esc(e.status === 503 ? 'The site has no database yet.' : e.message)}</p></div>`; }
 }
 

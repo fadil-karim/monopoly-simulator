@@ -1,0 +1,7 @@
+reduce the font sizes a bit to make single words fit on one line
+
+hover over them should show the names in bigger text
+
+there should also be a full screen board viewer
+
+make the font sizes consistent too - bow street for eg looks bigger than the rest

@@ -97,21 +97,35 @@ the page header's class and once broke the top row) is a flex box with its
 colour band in flow at the inner edge and a `.txt` block holding the name,
 the square's picture, the price and the buildings, all centred, the name
 at the inner edge and the price at the outer one (a top square lists them
-in reverse order so the name still meets the band). A square is its own
-size container and its name is kept to whole words: `renderBoard` measures
-the longest word's width in ems of Jost on a canvas (`wordWidth`, measured
-again once the face has loaded) and sets it as `--w`, and the stylesheet
-gives the name `min(1em, --avail / --w)` with a 5px floor, `--avail` being
-the width the text has on that side; a word that cannot fit even at the
-floor breaks rather than clips. A corner's label is set larger (17.5% of
-the square, a one-word corner such as GO 34%) in the lower part of the
-square, with the tokens above it; GO is red with a black outline and the
-red arrow of the printed board under it, pointing the way round. Chance
-carries its question mark, Community Chest the chest, a station the
-locomotive and the utilities the bulb, the tap and, on the Mega board, the
-flame (`ICONS`: inline SVG, the question mark a styled `?`), between the
-name and the price; the heat board of the statistics page uses the same
-tracks and the same whole-word sizing.
+in reverse order so the name still meets the band). Every name on a board
+is set at one size, so the labels read alike: `renderBoard` measures each
+square's longest word in ems of Jost on a canvas (`wordWidth`, measured
+again once the face has loaded) and sets it as `--w`, and `sizeNames`,
+run after every render and on resize, takes the largest size at which
+every square's longest word still fits its own text box, under a base
+that follows the board's width (1.18% of it, 12px at most, a 5px floor),
+and sets it on the board as `--name`, with `--cname` for the corners (the
+same among themselves, 17.5% of the square at most) and `--gname` for a
+one-word corner such as GO (34%); the prices, the buildings and the
+pictures take their sizes from `--name`. The stylesheet's own formula
+(`min(1em, --avail / --w)`, each square its own size container) is the
+fallback until the script has set them; a word that cannot fit even at
+the floor breaks rather than clips, and one very long word, as on the
+Dutch board, sets the size for the whole board. A corner's label sits in
+the lower part of the square, with the tokens above it; GO is red with a
+black outline and the red arrow of the printed board under it, pointing
+the way round. Chance carries its question mark, Community Chest the
+chest, a station the locomotive and the utilities the bulb, the tap and,
+on the Mega board, the flame (`ICONS`: inline SVG, the question mark a
+styled `?`), between the name and the price; the heat board of the
+statistics page uses the same tracks and the same one size. Hovering any
+square shows its name large, with the price, in a label (`#hover-name`,
+`showHoverName`) on the square's inner side, inside the board. The
+full-screen viewer (`#g-full` in the game bar, the F key, Escape or the
+`#fs-exit` button to leave) gives `.board-wrap` the class `full`: fixed
+over the page, the board alone at the window's smaller side, framed as
+on the page, the browser's own full-screen mode asked for too where it
+exists; `fitBoard` sizes it from the window then.
 The palette is Monopoly's with the official group colours; the face is Jost.
 The board itself has fixed colours in both themes, taken from the owner's
 photograph of the classic London board: the squares and the centre in the
@@ -244,3 +258,4 @@ no new prompt leaves the archive untouched.
 | v1.6 | One Perplexity key for the seats, a plain dropdown, a fresh stylesheet | ChatGPT, Grok, Kimi and GLM now play through Perplexity's Agent API with a single key, under the ids it serves, while Claude and Gemini stay direct; a runner option prints a provider's current catalogue. The board edition is a plain dropdown in the header. The scripts and the stylesheet moved to new paths so every browser fetches the current ones, after the earliest releases had told browsers to keep the old stylesheet for a year, which is what left the page unstyled. |
 | v1.7 | The corners of the board read whole | The four corner squares, GO, Jail, Free Parking and Go To Jail, no longer spill their words past the edge of the square: each corner's lettering now takes its size from the square itself and from its longest word, in every edition, with GO set larger as it is on the printed board. |
 | v1.8 | The squares take the printed board's shape | The board now has the printed board's proportions, with large corner squares and property boxes that stand tall along the top and bottom and lie wide at the sides, and every name and price is centred in its box with the name kept to whole words, however the window is sized. Chance, Community Chest, the stations and the utilities carry their pictures, and GO is lettered in red with a black outline and the arrow that points the way round the board. |
+| v1.9 | One lettering, names on hover, the board full screen | Every name on the board is now set at one size, a little smaller, chosen so that the longest word still fits its square, so Bow Street no longer out-sizes Marlborough Street and short names sit on one line; the prices and pictures follow it. Hovering any square shows its name and price large beside it, and a Full screen button in the game bar puts the board alone across the window, with Escape to come back. |

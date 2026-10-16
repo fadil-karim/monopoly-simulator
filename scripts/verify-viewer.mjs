@@ -63,6 +63,14 @@ const owned = await page.evaluate(() => { const c = Array.from(document.querySel
 must(owned != null, 'an owned property mid-game');
 await page.hover(`.cell[data-i="${owned}"]`); await wait(150);
 must(/Owner/i.test(await text('#centre .deed')) && /Ledger/i.test(await text('#centre .deed')), 'deed card on hover');
+await page.hover('.cell[data-i="1"]'); await wait(120);
+must(!(await page.$eval('#hover-name', (el) => el.hidden)) && /Old Kent Road/i.test(await text('#hover-name')), 'hovering a square shows its name large');
+must(await page.$$eval('#board .cell:not(.corner) .name', (ns) => new Set(ns.map((n) => getComputedStyle(n).fontSize)).size === 1), 'every property name is set at the one size');
+await page.click('#g-full'); await wait(250);
+must(await page.$eval('.board-wrap', (el) => el.classList.contains('full')) && (await page.$eval('#board', (el) => el.getBoundingClientRect().height)) > 700, 'the full-screen viewer fills the window');
+await page.screenshot({ path: `${out}/fullscreen.png` });
+await page.keyboard.press('Escape'); await wait(150);
+must(!(await page.$eval('.board-wrap', (el) => el.classList.contains('full'))), 'Escape leaves full screen');
 await page.mouse.move(5, 5); await wait(100);
 // 4. narrator panel
 must(/No match report/.test(await text('#n-recap')), 'no recap for a bot game');

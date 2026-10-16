@@ -36,6 +36,7 @@
         </div>
         <div class="gamebar-right">
           <label id="g-pick-wrap" class="hidden">Game <select id="g-pick"></select></label>
+          <button id="g-full" class="btn small" type="button" title="Full screen (F)">⛶ Full screen</button>
           <a id="g-link" class="btn small" href="#live">Link to this game</a>
         </div>
       </div>
@@ -57,7 +58,7 @@
         <label class="check small"><input type="checkbox" id="r-follow" checked> follow live</label>
       </div>
       <div class="play-grid">
-        <div class="board-wrap"><div id="board" class="board"></div></div>
+        <div class="board-wrap"><div id="board" class="board"></div><div id="hover-name" class="hover-name" hidden></div><button id="fs-exit" class="fs-exit" type="button" title="Exit full screen (Esc)" aria-label="Exit full screen">✕</button></div>
         <aside class="side">
           <div class="feed-head"><h3>Table talk</h3></div>
           <div id="chat" class="feed chat"></div>
