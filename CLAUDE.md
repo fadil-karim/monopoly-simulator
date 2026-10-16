@@ -18,17 +18,17 @@ to production**.
 public/            everything served as assets
   index.html       the viewer: live, games, replay, Monopoly stats, model stats, about
   404.html
-  assets/app|style|fonts   app/ the modules (viewer, replay, stats, transcript, names, engine, board, heuristics, providers, pricing, ai, runner, analytics), style/site.css, fonts/jost.woff2 (OFL, the only font file)
-  _headers         security + caching headers (fonts immutable; app and style revalidated on every load, because the modules import each other by name)
+  assets/app|style|fonts|logos   app/ the modules (viewer, replay, stats, transcript, names, engine, board, heuristics, providers, pricing, ai, runner, analytics), style/site.css, fonts/jost.woff2 (OFL, the only font file), logos/ the models' makers' logos on the tokens (LICENSE.txt: LobeHub's icons, MIT; Xiaomi's from Simple Icons, CC0)
+  _headers         security + caching headers (fonts immutable; app and style revalidated on every load, because the modules import each other by name; logos a day)
   robots.txt
                    app/names.js the board editions (names by position, currencies) the viewer reads a game as
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks; 0002 the cost of each call), applied by the Worker itself on first use
 runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
-scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
+scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), check-ledger.mjs (the ledgers vs the engine's cash, with the trading players of traders.mjs), seed-trades.mjs (a scripted trading game for the local site only), verify-viewer.mjs (the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
-package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/runner scripts
+package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/check:ledger/runner scripts
 prompt text/       the AI-instruction archive for the version in service
 ```
 
@@ -43,7 +43,24 @@ with the same `player`, `ownedBy`, `netWorth` methods the renderer uses);
 `scripts/check-replay.mjs` compares it with the engine after every event of
 80 games, so any new engine event that changes state needs a reducer case
 and the check kept green. `stats.js` derives the match, player and property
-statistics incrementally from the same log; `transcript.js` has the one
+statistics incrementally from the same log, and the game's ledgers:
+`payments`, every sum that changes hands as `{ from, to, amount, kind,
+property?, level?, text? }` with a player's id or `'bank'` on each side and
+`PAYMENT_KINDS` naming the kinds (the bank's buy-back of a bankrupt's
+buildings included, from the levels it tracks), so that every player's cash
+is the starting cash plus what they received less what they paid, which
+`scripts/check-ledger.mjs` proves after every event of sixty games whose
+players trade, counter and break the rules (`scripts/traders.mjs`);
+`negotiations`, each trade offer with its steps (offer, counter, accept,
+reject, lapsed, or refused by the rules from an `illegal_action`), its
+outcome and its terms; and for each property its landings, rent, sales,
+buildings, mortgages, trades, owners and the deed's history as entries the
+viewer words (`deedLine`). It reads the London names inside events (a rent
+payment's reason, a tax) off the London board, whatever edition the game is
+dressed as. A counter-offer carries the negotiation's step as
+`negotiationRound`; before v1.19 it overwrote `round`, so the reducer takes
+no round from a `trade_counter` and `eventLine` takes the game's round as a
+third argument for one. `transcript.js` has the one
 line per event (`fmtEvent`, `eventLine`) and the plain-text `transcript`
 (`compact` drops dice, moves and other noise; `maxChars` trims the middle).
 
@@ -79,8 +96,13 @@ smaller, and a seed makes the draw repeatable. The dashboard
 127.0.0.1:8788, `--port`, `--no-open`) serves `dashboard.html`, a page
 that reads the table (`config.json`, else the default) and `runner/.env`
 into a form (site, token, a key box per provider in the pool, the pool
-with a catalogue button per row, seats, edition, games, loop, round limit,
-dry run, instructions, narrator), writes the table to `runner/config.json`
+with a dropdown of models per row, seats, edition, games, loop, round limit,
+dry run, instructions, narrator; a row's dropdown lists every model its
+provider serves to the key, asked for at `/api/models` as soon as a key is
+there and again with refresh, with the models the server knows before that,
+`knownModels`: the adapter's list and the priced ones with their names,
+grouped by the maker before the slash, and Other for an id typed by hand;
+the narrator's model is the same), writes the table to `runner/config.json`
 on Save or Start, writes the site, the token and the keys to `runner/.env`
 only when "remember" is ticked, and starts `run.mjs` as a child process
 with the keys in its environment, streaming its output to the page
@@ -168,6 +190,28 @@ as before: the board sized from its position so it fills the window, the
 edition line at the top of the centre, the match or the hovered property's
 deed in the middle, the dice and last event boxed at the bottom, the player
 cards beneath with income by source and property and the roll histogram.
+At the bottom, under the narrator, `#ledgers` holds the game's three ledgers
+up to the move shown (`renderLedgers`): Payments (who paid whom, a row a
+payer and a column a payee with the bank last, then every payment newest
+first, a hundred at a time, filtered by player and by kind), Trades and
+offers (every negotiation newest first with its steps, the reasons given and
+its outcome, completed ones with what changed hands, filtered by player and
+outcome) and Properties (every property's owner, landings, rent, rent a
+landing, first price, buildings, mortgages, trades, owners and rent less
+cost, sorted by any heading); they are drawn at most every 400 ms and only
+while in view (an IntersectionObserver), each part only when its signature
+has changed, and on a phone a payment or a negotiation reads as a small card.
+Every roll chart (`rollChart`, the centre's, the cards' and the statistics
+pages') is a row of columns the pointer can rest on, whatever a bar's
+height, and the label (`.tip`: `showTip`, and `refreshTip` after every
+render and scroll) says the total, how many rolls of it out of all of them
+and what two fair dice give; a tap shows it on a phone. Moving the pointer
+into the board's centre brings the match back unless a square was clicked to
+keep its deed there. A model's token wears its maker's logo (`modelLogo` in
+`pricing.js` by the model id and then the provider, `/assets/logos/<maker>.svg`,
+`tokenHtml`; Kimi's white K on a black tile, `LOGO_TILE`) in a ring of the
+player's colour, sized from the board (`--tok`, set by `sizeNames`) and
+spread across its square; the rule-based bot keeps its initial.
 The board has the printed board's proportions: `boardTracks` gives the
 corner squares 1.6 times a property's width, so the properties stand tall
 along the top and bottom and lie wide at the sides, and the centre takes
@@ -288,17 +332,21 @@ node runner/run.mjs --config runner/config.bots.json --token local-dev-token --g
 2. `npm run simulate` - must report `illegal: 0` and no thrown invariant;
    `node scripts/check-providers.mjs` for a change to `providers.js`.
 3. `npm run check:replay` - the reducer against the engine, every event,
-   both editions: `ok: true`.
+   both editions: `ok: true`; and `npm run check:ledger`, the ledgers against
+   the engine's cash with trading players, both editions: `ok: true`.
 4. Serve `public/`, render it with headless Chromium, and inspect the
    screenshots: styles applied, board drawn, layout intact at desktop and
    phone widths.
 5. For a change to the Worker, the runner or the viewer: apply the local
    migrations, start `npm run dev`, play two bot games with the runner
-   against it, then `node scripts/verify-viewer.mjs` (with
+   against it and seed a trading game (`node scripts/seed-trades.mjs`, which
+   refuses any site but this machine's), then `node scripts/verify-viewer.mjs` (with
    `PLAYWRIGHT_MODULE` and `CHROME_PATH` when playwright is not installed
    here) and look at its screenshots in `.render-check/viewer/`: the live
    tab, the replay, the games list, both statistics pages, a game followed
-   live, the phone.
+   live, the ledgers, the roll label, the logos, the phone. For a change to
+   the dashboard, drive it in headless Chromium with `/api/models` answered
+   by a stand-in.
 
 Never leave pushed work unverified or half-finished. Work in small, complete
 batches: implement, verify, commit, push.
@@ -365,3 +413,4 @@ no new prompt leaves the archive untouched.
 | v1.16 | Each model's bill for every game, database included | Every game now shows what it cost, seat by seat: each model by name, the API that served it and the dollars its calls came to, with the game's total in the games list and each model's average cost a game in the model statistics. The site also creates its own database when it deploys and lays out its tables itself, so the only setup left is the runner's token, and the runner and its dashboard already know the site's address. |
 | v1.17 | A quieter Live tab, and errors that say why | The Live tab now simply follows the game, without the replay controls: they appear only when you open an older game, which a finished game on the Live tab offers with a Replay this game button, and the full-screen and link buttons step aside when there is no game on the table. When the runner cannot reach the site, or a model's service, it now says why, whether the address does not resolve, the certificate is not trusted or nothing answers, and what to check. |
 | v1.18 | The runner's token, checked before the game begins | The runner now checks its token with the site before it starts a game, so a token the site refuses no longer stops a game that has already begun calling the models, and it says which token it sent, where it came from and how long it is, so a mistyped or stale one is easy to spot. Spaces or a line break around the token, the usual souvenir of copying it from a terminal, no longer make the site refuse it. |
+| v1.19 | Every payment, trade and property on the books | Under every game now sit its ledgers, following the move shown: every payment between the players and with the bank, with a table of who paid whom; every trade offered, with its counter-offers, the answers and how it ended; and every property's landings, rent, price, buildings and history. Each model's token wears its maker's logo, the roll charts say how often each total has come up out of all the rolls, and the dashboard lets you pick each model from a dropdown of everything its provider serves. |

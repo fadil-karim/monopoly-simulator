@@ -1,7 +1,0 @@
-```
-started: node runner/run.mjs --config /Users/cohiba/monopoly-simulator/runner/config.json --games 1 --seats 8 --edition standard
-Monopoly AI runner 1.3 · https://monopoly.basilicalabs.ai · a pool of 9 models, 8 seats a game · config /Users/cohiba/monopoly-simulator/runner/config.json
-▶ 20261016-q4w8-1: Kimi, Gemini, MiMo, DeepSeek, Grok, ChatGPT, Claude, Nemotron (standard, seed 17501306)
-runner: the site rejected the runner token (401)
-runner stopped with code 1
-```

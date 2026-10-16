@@ -24,7 +24,11 @@ program the owner runs wherever the keys live.
   the rent it has generated and to whom, how often it was landed on and its
   ledger of purchases, trades and mortgages, and click to keep it there.
   Under the board every player is laid out with their properties, takings by
-  source and by property, and their own roll distribution. Table talk, the
+  source and by property, and their own roll distribution; resting the
+  pointer on any roll chart's column (or tapping it) says how many rolls of
+  that total there have been out of all of them, beside what two fair dice
+  give. Each model's token wears its maker's logo in a ring of the player's
+  colour; the rule-based bot keeps its initial. Table talk, the
   event feed and the model calls sit beside the board. The board has the
   printed board's proportions and pictures: large corner squares, tall
   property boxes, every name whole, centred and set at one size, Chance's
@@ -42,6 +46,18 @@ program the owner runs wherever the keys live.
   runner wrote one, a transcript of the whole game as plain text for pasting
   into any AI assistant (full or short), the full log as JSON, and, when the
   owner switches the narrator on, a box to ask the game questions.
+- **The ledgers**, at the bottom of every game, up to the move shown:
+  *Payments*, every sum that changed hands, between the players and with the
+  bank (rent, passing GO, taxes, cards, purchases, auctions, buildings,
+  mortgages, fines, cash in trades, bankruptcies), with a table of who paid
+  whom and filters by player and by kind; *Trades and offers*, every trade
+  offered with its counter-offers and answers, the reasons given and how it
+  ended, completed with what changed hands, rejected, lapsed or refused by the
+  rules; and *Properties*, every property's owner, landings, rent, rent a
+  landing, what it first fetched, what its buildings cost, how often it was
+  mortgaged and traded, and its rent less its cost, sortable by any column.
+  A player's cash is always where they started plus what they received less
+  what they paid in the payments ledger.
 - **Board editions**: a dropdown in the header reads the same board as
   another edition by position: London, Atlantic City, Paris,
   the German, Italian and Dutch classics and the 2008 World Edition. Every
@@ -153,8 +169,10 @@ npm run dashboard        # or: node runner/run.mjs --dashboard
 
 It opens a page on 127.0.0.1 (port 8788; `--port` changes it, `--no-open`
 skips the browser) with the site, the runner token, a key box for every
-provider in the pool, the pool itself (add, remove, pick a model from the
-provider's catalogue), the seats, the edition, the games a batch, the
+provider in the pool, the pool itself (add, remove, and choose each model
+from a dropdown of every model its provider serves to your key, the ones known
+here before a key is in, grouped by maker, with Other for any id), the seats,
+the edition, the games a batch, the
 loop, a dry run, the instructions and the narrator. Save writes the table
 to `runner/config.json`; Start saves and runs the runner, showing its
 progress, the games finished and a link to the site's Live tab; Stop
@@ -271,8 +289,10 @@ then open http://127.0.0.1:8789 (or whatever port wrangler prints).
 ```bash
 npm run simulate           # bot games: invariants and the illegal-action count
 npm run check:replay       # the replay reducer against the engine, every event
+npm run check:ledger       # the ledgers whole: every player's cash from the payments, every event, trading players
 npm run check              # wrangler deploy --dry-run
 node scripts/check-providers.mjs # the provider adapters against a mock: the four API shapes, the retry without knobs, what each call costs
+node scripts/seed-trades.mjs     # a scripted trading game for the local site only, for the trades ledger and the logos
 node scripts/verify-viewer.mjs   # the viewer in headless Chromium against the local Worker
 ```
 
@@ -285,7 +305,7 @@ public/
   assets/style/site.css
   assets/app/viewer.js        the viewer controller
   assets/app/replay.js        rebuilds a game's state from its event log (checked against the engine)
-  assets/app/stats.js         live match, player and property statistics from the event log
+  assets/app/stats.js         from the event log: the match, each player and each property, every payment and every trade offer
   assets/app/transcript.js    one line per event; the plain-text transcript
   assets/app/names.js         the board editions: names by position and currencies
   assets/app/analytics.js     SVG bar charts, upright and lying
@@ -297,6 +317,7 @@ public/
   assets/app/ai.js            prompts, JSON parsing, model-call records
   assets/app/runner.js        batch runner used by runner/run.mjs
   assets/fonts/jost.woff2    Jost (OFL), the Kabel-style face, self-hosted
+  assets/logos/              the models' makers' logos on the tokens (LICENSE.txt: LobeHub's icons, MIT; Simple Icons, CC0)
 src/worker.js                the Worker: /api/* over D1, assets for the rest
 src/aggregate.js             the statistics aggregations
 migrations/0001_init.sql     the schema
@@ -307,6 +328,8 @@ runner/config.default.json   the default table: the pool of models and the seats
 runner/config.bots.json      rule-based players, for local tests
 scripts/simulate.mjs         headless engine check
 scripts/check-replay.mjs     the replay reducer against the engine
+scripts/check-ledger.mjs     the ledgers against the engine's cash, with trading players (scripts/traders.mjs)
+scripts/seed-trades.mjs      a scripted trading game for the local site, never the public one
 scripts/verify-viewer.mjs    the viewer in headless Chromium
 scripts/check-providers.mjs  the provider adapters against a mock server
 wrangler.jsonc               Worker + assets + the D1 binding (the deploy creates the database)
