@@ -5,7 +5,7 @@ Standing policy for this repository. Read it before making any change here.
 ## What this repo is
 
 A Cloudflare Worker site: the viewer in `public/` served as static assets and
-`src/worker.js` for everything under `/api/`. Eight AI models play Monopoly
+`src/worker.js` for everything under `/api/`. Nine AI models play Monopoly
 (London and Mega editions) against each other; the games are played by
 `runner/run.mjs` on the owner's machine with the owner's keys and streamed
 to the site, which keeps every game in D1 and shows them live and move by
@@ -24,7 +24,7 @@ public/            everything served as assets
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
-runner/            run.mjs plays games and streams them; config.default.json the default table (the eight players, random order, Claude and Gemini direct, four through Perplexity, MiMo and Qwen through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
+runner/            run.mjs plays games and streams them; config.default.json the default table (nine players, random order, Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + env.local with a simulated D1; the production d1_databases block stays commented out until the owner has created the database
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/runner scripts
@@ -182,10 +182,11 @@ a mock. The default table (`runner/config.default.json`, read when
 `runner/config.json` is absent) seats Claude Opus 5.5 at xhigh (Anthropic,
 direct), Gemini 4 Argon (Google, direct), GPT-6.1 Sol, Grok 4.7, Kimi K3
 and Nemotron 3 Ultra through Perplexity with one key under the ids its
-changelog lists, and MiMo-V2.6-Pro and Qwen3.8 Max, which Perplexity does
-not serve, through OpenRouter (`openrouter`, kind `openai`, the effort as
-its unified reasoning setting) under `xiaomi/mimo-v2.6-pro` and
-`qwen/qwen3.8-max`, in a random seating order; the runner's `--list-models
+changelog lists, and MiMo-V2.6-Pro, Qwen3.8 Max and DeepSeek V4 Pro, which
+Perplexity does not serve, through OpenRouter (`openrouter`, kind `openai`,
+the effort as its unified reasoning setting) under `xiaomi/mimo-v2.6-pro`,
+`qwen/qwen3.8-max` and `deepseek/deepseek-v4-pro`: nine seats (the engine
+takes any number from two), in a random seating order; the runner's `--list-models
 <provider>` prints a provider's catalogue for the owner's key, which is
 where those ids are checked, and a call that fails plays that decision by
 the rules-based bot (`ai_fallback`).
@@ -275,3 +276,4 @@ no new prompt leaves the archive untouched.
 | v1.10 | Car, policeman and bars on the corner squares | Free Parking now carries its car, Go To Jail its policeman and the Jail its bars, as on the printed board. The pictures of Chance, Community Chest, the stations and the utilities sit in the middle of their squares, and on the left and right columns the price sits at the bottom of the square, as it does along the top and bottom. |
 | v1.11 | The default table: eight frontier seats, one Perplexity key | The runner now plays a default table without any copying or editing: Claude Opus 5.5 at its highest effort and Gemini 4 Argon on their own APIs, with GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3 Ultra through Perplexity on one key, seated in a random order every game; an edited copy of the file still takes over when a different table is wanted. |
 | v1.12 | MiMo and Qwen join through OpenRouter | The two Chinese models Perplexity could not serve now have their seats: MiMo-V2.6-Pro and Qwen3.8 Max, the two ranked highest beside Kimi K3, play through OpenRouter on a second key, taking the places of the DeepSeek Flash build and GLM-5.2. |
+| v1.13 | DeepSeek V4 Pro takes a ninth seat | DeepSeek V4 Pro joins the table through OpenRouter as a ninth player rather than in place of anyone, so every model asked for is seated: Claude, Gemini, ChatGPT, Grok, Kimi, MiMo, Qwen, DeepSeek and Nemotron, in a random order every game. |
