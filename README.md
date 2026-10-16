@@ -123,8 +123,11 @@ Perplexity does not serve, go through OpenRouter with one
 catalogues for your keys, the place to check the ids. A seat whose call
 fails plays that decision by the rules-based bot and the call is logged as
 a fallback. No web search is requested from Perplexity, so a call costs
-only its tokens. When the runner starts it gives the site its pool, which
-the homepage lists as the players.
+only its tokens; its models get the effort as `reasoning.effort`, are asked
+for no JSON mode (asked for one, GPT, Grok and Kimi answered `{}` to every
+decision) and stream their replies, since Perplexity closes a call that has
+not answered within about a minute. When the runner starts it gives the
+site its pool, which the homepage lists as the players.
 
 Each player is a provider, a model id, an effort setting and optional
 instructions; the runner also records the model id each API reports back on
@@ -133,11 +136,11 @@ Perplexity (Agent API), Mistral, DeepSeek, Groq, Together, OpenRouter,
 Cohere, Moonshot, Z.ai, Xiaomi, any OpenAI-compatible endpoint, and a free
 rule-based bot. Effort maps to each provider's reasoning knob
 (`output_config.effort` for Claude, `reasoning_effort` for OpenAI, xAI and
-Groq, thinking budgets for Gemini, `thinking` on and off for GLM, the
-`preset` on Perplexity, `reasoning.effort` on OpenRouter); a provider that
+Groq, thinking budgets for Gemini, `thinking` on and off for GLM,
+`reasoning.effort` on Perplexity and OpenRouter); a provider that
 rejects a knob gets the call again without it. Any call that fails or
-returns no usable JSON falls back to the rule-based player for that one
-decision and is counted as a fallback.
+returns no usable JSON, an empty `{}` included, falls back to the
+rule-based player for that one decision and is counted as a fallback.
 
 ## Where things run and where the data lives
 
@@ -198,8 +201,12 @@ here before a key is in, grouped by maker, with Other for any id), the seats,
 the edition, the games a batch, the
 loop, a dry run, the instructions and the narrator. Save writes the table
 to `runner/config.json`; Start saves and runs the runner, showing its
-progress, the games finished and a link to the site's Live tab; Stop
-finishes the uploads and marks a running game aborted. The keys are
+progress, the games finished and a link to the site's Live tab; Check the
+seats asks every model in the pool one real decision, as a game would, and
+says which answer (with the decision, the time and the cost) and which
+would hand their decisions to the bot, and why, for a few cents and without
+touching the site; Stop finishes the uploads and marks a running game
+aborted. The keys are
 handed to the runner for the run only, unless "remember" writes them to
 `runner/.env`. Both files are ignored by git. The command line does the
 same without the page:
@@ -214,6 +221,7 @@ OPENROUTER_API_KEY=...
 ENV
 node runner/run.mjs --list-models perplexity   # once: check the Perplexity ids against your key
 node runner/run.mjs --list-models openrouter   # and the OpenRouter ones
+node runner/run.mjs --probe                    # before a batch: does every seat answer?
 node runner/run.mjs --loop
 ```
 
@@ -232,7 +240,8 @@ by git) and edit that; the runner prefers it when it exists.
 `pauseBetweenGamesMs`, and starts the next; `--seats`, `--games`, `--concurrency`,
 `--seed`, `--edition`, `--max-rounds`, `--delay` (a pause before every turn)
 and `--dry` (play without uploading) override the config; `--list-models
-<provider>` prints what a provider serves to your key and exits. Every game is also
+<provider>` prints what a provider serves to your key and exits; `--probe`
+asks every model in the pool one decision and says which seats answer. Every game is also
 written to `runner/out/<id>.json`. A player whose key is missing plays as the
 rule-based bot and says so at start. With `"narrator"` in the config the
 runner writes the match report at the end of each game with that model. Stop
@@ -246,7 +255,10 @@ address that does not resolve (the domain not attached to the Worker yet, or
 an old answer cached on the machine), a certificate it will not trust (a new
 domain's still on its way, or a VPN, proxy or antivirus in between), nothing
 answering, or a page that is not the site's API. A model call that cannot
-reach its API carries the same reason in its error.
+reach its API carries the same reason in its error, and is tried again
+before its decision goes to the bot: a rate limit after as long as the API
+asks (or 4 to 32 seconds), a connection that never opened four more times
+over about twenty seconds, a server error or a cut connection twice more.
 
 ### What a game costs
 
@@ -321,7 +333,7 @@ npm run simulate           # bot games: invariants and the illegal-action count
 npm run check:replay       # the replay reducer against the engine, every event
 npm run check:ledger       # the ledgers whole: every player's cash from the payments, every event, trading players
 npm run check              # wrangler deploy --dry-run
-node scripts/check-providers.mjs # the provider adapters against a mock: the four API shapes, the retry without knobs, what each call costs
+node scripts/check-providers.mjs # the provider adapters against a mock: the four API shapes, Perplexity's stream, the retries, the empty reply, what each call costs
 node scripts/seed-trades.mjs     # a scripted trading game for the local site only, for the trades ledger, the logos and the homepage's players
 node scripts/verify-viewer.mjs   # the homepage and the viewer in headless Chromium against the local Worker
 ```

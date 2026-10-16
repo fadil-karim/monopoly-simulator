@@ -111,7 +111,13 @@ on Save or Start, writes the site, the token and the keys to `runner/.env`
 only when "remember" is ticked, and starts `run.mjs` as a child process
 with the keys in its environment, streaming its output to the page
 (polled every 1.5 s) and counting the finished games; Stop sends SIGINT,
-which the runner takes as its orderly stop. When the table in use leaves the
+which the runner takes as its orderly stop. Check the seats starts it with
+`--probe` instead: one real decision for every model in the pool, at once
+(a street to buy, asked as a game asks it, through `AIDecider` and
+`Game.decide`), each answered ✓ with the decision, the time, the cost and
+the tokens, or ✗ with why (no key, an empty reply, an unparseable or
+refused one, an error) and the reply itself; the runner exits 1 when a
+seat would not play, and needs neither the site nor the token for it. When the table in use leaves the
 site blank, the form offers the default table's (`defaultSite`).
 
 The Worker keeps games, seats, events and calls in D1 (`migrations/`). A
@@ -338,14 +344,38 @@ Providers (`providers.js`): four adapter kinds, `anthropic`, `gemini`,
 `openai` (chat completions) and `responses` (the OpenAI Responses shape,
 which Perplexity's Agent API speaks at `https://api.perplexity.ai/v1` under
 provider-prefixed ids such as `openai/gpt-5.5`, `xai/grok-4.7`,
-`perplexity/kimi-k3`, `zai/glm-5.2`; effort maps to its `preset`, fast to
-xhigh; no tools are requested, so no web search is run). Every adapter
-returns `servedModel`, retries once without its optional knobs on a 400,
-and takes `plain: true` to skip the JSON format for prose (the narrator); a
-fetch that fails carries Node's reason in its message (`netReason`: Node's
-"fetch failed" keeps it in `cause`) and is still retried.
-`scripts/check-providers.mjs` drives the Responses and chat shapes against
-a mock. The default table (`runner/config.default.json`, read when
+`perplexity/kimi-k3`, `zai/glm-5.2`; effort goes as `reasoning.effort`,
+minimal to max, never as a `preset`, which is a whole agent with its own
+instructions and tools; no tools are requested, so no web search is run).
+Perplexity is asked for no JSON mode (a provider's `jsonMode` asks for
+`json_object`): it documents none, and asked for one, GPT-6.1 Sol, Grok 4.7
+and Kimi K3 answered `{}` to every decision of the game of 16 October, so
+the prompt asks for JSON and `parseJsonReply` finds it. Its replies are
+streamed (the provider's `stream`; `fetchSse`: the text from
+`response.output_text.delta`, the whole response with its usage and cost
+from `response.completed`, keep-alives skipped, an `error` event a failed
+call, a stream cut short tried again, an empty one answered 422), since
+Perplexity closes a call that has not answered within about a minute
+("other side closed", three tries making the 183 s of that game's
+failures). After a 400 a Responses call is sent again without its optional
+knobs, then without streaming, then plain, and the shape that worked is
+used first from then on for that model (`shapes`). Every adapter returns
+`servedModel`, retries once without its optional knobs on a 400 (the other
+three), and takes `plain: true` to skip the JSON format for prose (the
+narrator); a fetch that fails carries Node's reason in its message
+(`netReason`: Node's "fetch failed" keeps it in `cause`). `withRetries`
+tries again on a 429 after the API's `Retry-After` (a minute at most) or 4,
+8, 16 and 32 s, on a connection that never opened (`connectFailed`) four
+more times over about twenty seconds, and on a server error, a timeout or a
+connection cut mid-reply twice more; `backoff` scales the waits for the
+checks. The runner gives each address Node tries 2.5 s rather than 250 ms
+(`setDefaultAutoSelectFamilyAttemptTimeout`), since on a machine whose IPv6
+has no route a moment of slow Wi-Fi failed every call at once. A reply
+that parses to an empty object is a fallback (`empty reply`), never "nothing
+to do". `scripts/check-providers.mjs` drives the four shapes against a
+mock: the stream with its keep-alives, a refused option, a refused stream,
+an empty stream, a cut one, a rate limit in the stream and with
+`Retry-After`, the empty reply, an API that cannot be reached. The default table (`runner/config.default.json`, read when
 `runner/config.json` is absent) draws eight seats a game from a pool of
 nine: Claude Opus 5.5 at xhigh (Anthropic, direct), Gemini 4 Argon (Google,
 direct), GPT-6.1 Sol, Grok 4.7, Kimi K3 and Nemotron 3 Ultra through
@@ -459,3 +489,4 @@ no new prompt leaves the archive untouched.
 | v1.19 | Every payment, trade and property on the books | Under every game now sit its ledgers, following the move shown: every payment between the players and with the bank, with a table of who paid whom; every trade offered, with its counter-offers, the answers and how it ended; and every property's landings, rent, price, buildings and history. Each model's token wears its maker's logo, the roll charts say how often each total has come up out of all the rolls, and the dashboard lets you pick each model from a dropdown of everything its provider serves. |
 | v1.20 | Logo stickers on the board, houses you can see | Each model's token is now its maker's whole logo, cut out like a sticker with a white outline, instead of a small logo inside a coloured ring. Houses and hotels now stand on the property's colour band as they do on the printed board, a green house each and a red hotel, much larger than the old marks and outlined in white so they read on every colour. |
 | v1.21 | A homepage for every game, with its players | The site now opens on a homepage of games: the players at the top, every model in the pool with its maker's logo, the API it plays through and its Monopoly record, then Monopoly with what is on its table now, and chess, checkers, Battleship and Connect 4 waiting beside it, marked coming soon. Monopoly has a page of its own, a click from the homepage, and old links to it still land there. A plan for building the four new games now sits with the code, ending with the questions that need your answer. |
+| v1.22 | Every seat really plays, and the game checks out | An audit of a live game found the board sound, with every lap past GO paid, every rent right and every player's cash accounted for, but three of the eight seats, ChatGPT, Grok and Kimi, were never really playing: Perplexity answered all their decisions with an empty reply, so the rule-based bot played for them. They are now asked the way Perplexity documents, their replies stream so a long think is no longer cut off after a minute, rate limits and brief network drops are waited out instead of handed to the bot, and a new Check the seats button asks every model one question before a batch to show which are answering. |
