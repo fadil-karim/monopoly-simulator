@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Runner, gameRecord } from '../public/assets/app/runner.js';
+import { Runner, gameRecord, modelKey } from '../public/assets/app/runner.js';
 import { PROVIDERS, callModel, listModels } from '../public/assets/app/providers.js';
 import { StatsTracker } from '../public/assets/app/stats.js';
 import { transcript } from '../public/assets/app/transcript.js';
@@ -36,6 +36,7 @@ if (args.help) {
   console.log(`node runner/run.mjs [options]
   --config <file>     runner/config.json when it exists, else runner/config.default.json
   --games <n>         games in this batch (config.games)
+  --seats <n>         players a game, drawn at random from the config's pool, never the same model twice (config.seats, 8; the standard board takes 8 at most)
   --concurrency <n>   games at once (config.concurrency)
   --seed <n>          first seed, +1 per game (random when unset)
   --edition <e>       standard | mega
@@ -75,7 +76,7 @@ if (args['list-models']) {
   await new Promise(() => {});
 }
 const players = (cfg.players || []).map((p, i) => ({ temperature: '', instructions: '', ...p, id: p.id || `p${i + 1}`, effort: p.effort || '' }));
-if (players.length < 2) die('the config needs at least two players');
+if (players.length < 2) die('the config needs at least two players in its pool');
 for (const p of players) {
   const pr = PROVIDERS[p.provider];
   if (!pr) die(`unknown provider "${p.provider}" for ${p.name}`);
@@ -85,6 +86,12 @@ const gameConfig = { ...(cfg.config || {}) };
 if (args.edition) gameConfig.edition = args.edition;
 if (args['max-rounds']) gameConfig.maxRounds = Number(args['max-rounds']);
 if (args.delay) gameConfig.turnDelayMs = Number(args.delay);
+// a game seats `seats` of the pool, drawn at random, never the same model twice; the standard board takes eight at most
+let seats = Math.max(2, Number(args.seats || cfg.seats || 8));
+if ((gameConfig.edition || 'standard') === 'standard' && seats > 8) { console.warn(`! the standard board seats eight at most; ${seats} asked, 8 seated`); seats = 8; }
+const distinct = new Set(players.map(modelKey)).size;
+if (distinct < players.length) console.warn(`! the pool lists the same model more than once; it will be seated once a game`);
+seats = Math.min(seats, distinct);
 
 // ---------- the site ----------
 async function post(path, body, attempts = 6) {
@@ -212,7 +219,7 @@ process.on('SIGINT', async () => {
 async function runBatch(batchNo) {
   const batchId = `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4)}${batchNo ? '-' + batchNo : ''}`;
   const setup = {
-    batchId, players, universal: cfg.universal || '', config: gameConfig,
+    batchId, players, seats, universal: cfg.universal || '', config: gameConfig,
     games: Number(args.games || cfg.games || 1), concurrency: Number(args.concurrency || cfg.concurrency || 1),
     seed: args.seed != null ? Number(args.seed) : cfg.seed ?? '', keys, baseUrls,
     maxTokens: cfg.maxTokens || 4000, timeoutMs: (cfg.timeoutSeconds || 600) * 1000, apiConcurrency: cfg.apiConcurrency || 8, logPrompts: true,
@@ -266,7 +273,7 @@ async function runBatch(batchNo) {
 }
 
 (async () => {
-  console.log(`Monopoly AI runner ${VERSION} · ${dry ? 'dry run (no uploads)' : site} · ${players.length} players · config ${configPath}`);
+  console.log(`Monopoly AI runner ${VERSION} · ${dry ? 'dry run (no uploads)' : site} · a pool of ${players.length} models, ${seats} seats a game · config ${configPath}`);
   if (!dry) {
     const h = await fetch(`${site}/api/health`).then((r) => r.json()).catch((e) => ({ error: e.message }));
     if (!h.ok) die(`the site did not answer: ${h.error || JSON.stringify(h)}`);

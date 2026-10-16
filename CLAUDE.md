@@ -5,8 +5,9 @@ Standing policy for this repository. Read it before making any change here.
 ## What this repo is
 
 A Cloudflare Worker site: the viewer in `public/` served as static assets and
-`src/worker.js` for everything under `/api/`. Nine AI models play Monopoly
-(London and Mega editions) against each other; the games are played by
+`src/worker.js` for everything under `/api/`. AI models play Monopoly
+(London and Mega editions) against each other, up to eight at a table drawn
+from a pool; the games are played by
 `runner/run.mjs` on the owner's machine with the owner's keys and streamed
 to the site, which keeps every game in D1 and shows them live and move by
 move. There is no build step - the files in `public/` are the site. The repo
@@ -24,7 +25,7 @@ public/            everything served as assets
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
-runner/            run.mjs plays games and streams them; config.default.json the default table (nine players, random order, Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
+runner/            run.mjs plays games and streams them; config.default.json the default table (a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + env.local with a simulated D1; the production d1_databases block stays commented out until the owner has created the database
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/runner scripts
@@ -47,8 +48,8 @@ line per event (`fmtEvent`, `eventLine`) and the plain-text `transcript`
 (`compact` drops dice, moves and other noise; `maxChars` trims the middle).
 
 The runner (`runner/run.mjs`) reads `runner/config.json` when it exists, else
-`runner/config.default.json` (players, universal instructions, engine config,
-narrator) and the keys from the environment or
+`runner/config.default.json` (the pool of players, `seats`, universal
+instructions, engine config, narrator) and the keys from the environment or
 `runner/.env` (`PROVIDERS[*].env` names them), registers each game at
 `POST /api/ingest/games`, buffers events and calls and flushes them every
 700 ms, and at the end posts `finish` with the result, each player's rank,
@@ -58,7 +59,13 @@ winner, per-property landings, rent, purchase and ownership changes), plus
 the narrator's recap when a narrator is configured. Uploads are idempotent
 (`INSERT OR IGNORE` by sequence), retried with backoff, and every game is
 also written to `runner/out/`. `--delay` pauses before each turn so a
-bot-only game can be watched live; `--loop` keeps playing batches.
+bot-only game can be watched live; `--loop` keeps playing batches. Each
+game's players are drawn from the pool by `pickSeats` in `runner.js`:
+`seats` of them at random (8 by default; the runner clamps it to eight on
+the standard board and to the distinct models in the pool), never the same
+model twice (`modelKey`, `provider/model`; the rule-based bot is not a
+model and may fill any number of seats), all of them when the pool is
+smaller, and a seed makes the draw repeatable.
 
 The Worker keeps games, seats, events and calls in D1 (`migrations/`). A
 model is identified by `model_key` = `provider/model@effort`, and
@@ -179,14 +186,16 @@ returns `servedModel`, retries once without its optional knobs on a 400,
 and takes `plain: true` to skip the JSON format for prose (the narrator).
 `scripts/check-providers.mjs` drives the Responses and chat shapes against
 a mock. The default table (`runner/config.default.json`, read when
-`runner/config.json` is absent) seats Claude Opus 5.5 at xhigh (Anthropic,
-direct), Gemini 4 Argon (Google, direct), GPT-6.1 Sol, Grok 4.7, Kimi K3
-and Nemotron 3 Ultra through Perplexity with one key under the ids its
-changelog lists, and MiMo-V2.6-Pro, Qwen3.8 Max and DeepSeek V4 Pro, which
-Perplexity does not serve, through OpenRouter (`openrouter`, kind `openai`,
-the effort as its unified reasoning setting) under `xiaomi/mimo-v2.6-pro`,
-`qwen/qwen3.8-max` and `deepseek/deepseek-v4-pro`: nine seats (the engine
-takes any number from two), in a random seating order; the runner's `--list-models
+`runner/config.json` is absent) draws eight seats a game from a pool of
+nine: Claude Opus 5.5 at xhigh (Anthropic, direct), Gemini 4 Argon (Google,
+direct), GPT-6.1 Sol, Grok 4.7, Kimi K3 and Nemotron 3 Ultra through
+Perplexity with one key under the ids its changelog lists, and
+MiMo-V2.6-Pro, Qwen3.8 Max and DeepSeek V4 Pro, which Perplexity does not
+serve, through OpenRouter (`openrouter`, kind `openai`, the effort as its
+unified reasoning setting) under `xiaomi/mimo-v2.6-pro`, `qwen/qwen3.8-max`
+and `deepseek/deepseek-v4-pro`; eight is the most the standard board takes
+(the engine itself takes any number from two), and the seated players sit
+in a random order; the runner's `--list-models
 <provider>` prints a provider's catalogue for the owner's key, which is
 where those ids are checked, and a call that fails plays that decision by
 the rules-based bot (`ai_fallback`).
@@ -277,3 +286,4 @@ no new prompt leaves the archive untouched.
 | v1.11 | The default table: eight frontier seats, one Perplexity key | The runner now plays a default table without any copying or editing: Claude Opus 5.5 at its highest effort and Gemini 4 Argon on their own APIs, with GPT-6.1 Sol, Grok 4.7, Kimi K3, DeepSeek V4, GLM-5.2 and Nemotron 3 Ultra through Perplexity on one key, seated in a random order every game; an edited copy of the file still takes over when a different table is wanted. |
 | v1.12 | MiMo and Qwen join through OpenRouter | The two Chinese models Perplexity could not serve now have their seats: MiMo-V2.6-Pro and Qwen3.8 Max, the two ranked highest beside Kimi K3, play through OpenRouter on a second key, taking the places of the DeepSeek Flash build and GLM-5.2. |
 | v1.13 | DeepSeek V4 Pro takes a ninth seat | DeepSeek V4 Pro joins the table through OpenRouter as a ninth player rather than in place of anyone, so every model asked for is seated: Claude, Gemini, ChatGPT, Grok, Kimi, MiMo, Qwen, DeepSeek and Nemotron, in a random order every game. |
+| v1.14 | A pool of models, eight drawn to each table | Every game now seats up to eight models drawn at random from the pool in the config, never the same model twice, so the pool can grow past eight and no model ever plays against itself; a pool smaller than the seats plays whole. Qwen3.8 Max is back in the pool beside DeepSeek V4 Pro, so nine models take turns at the table of eight. |

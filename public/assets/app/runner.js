@@ -2,8 +2,24 @@
 import { Game } from './engine.js';
 import { AIDecider } from './ai.js';
 
+// The seats of one game, drawn from the pool: `seats` of them at random (all of them when the pool is smaller), never
+// the same model twice, so no model plays against itself (the rule-based bot is not a model and may fill any number
+// of seats); a seed makes the draw repeatable.
+export const modelKey = (p) => (p.provider === 'heuristic' ? `heuristic#${p.id}` : `${p.provider}/${p.model}`);
+export function pickSeats(pool, seats, seed) {
+  let x = (Number(seed) || Date.now()) >>> 0;
+  const rnd = () => { x = (x + 0x6d2b79f5) >>> 0; let t = x; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rest = pool.slice(), out = [], seen = new Set();
+  while (rest.length && out.length < seats) {
+    const p = rest.splice(Math.floor(rnd() * rest.length), 1)[0];
+    const key = modelKey(p);
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(p);
+  }
+  return out;
+}
 export class Runner {
-  // setup: { players: [{id,name,provider,model,effort,instructions,temperature,colour}], universal, config, games, concurrency, keys, baseUrls, maxTokens, timeoutMs, apiConcurrency, logPrompts }
+  // setup: { players: [{id,name,provider,model,effort,instructions,temperature,colour}] (the pool), seats (a game's players, drawn from the pool; all of them when unset), universal, config, games, concurrency, keys, baseUrls, maxTokens, timeoutMs, apiConcurrency, logPrompts }
   constructor(setup, hooks = {}) {
     this.setup = setup;
     this.hooks = hooks; // onGameStart(game), onEvent(ev, game), onLlm(rec, game), onGameEnd(game, result), onDone(summary)
@@ -28,12 +44,14 @@ export class Runner {
     const worker = async () => {
       while (next < total && !this.abort.signal.aborted) {
         const n = next++;
+        const seed = s.seed != null && s.seed !== '' ? Number(s.seed) + n : undefined;
+        const seated = pickSeats(s.players, Number(s.seats) || s.players.length, seed != null ? seed * 7919 + 17 : undefined);
         const game = new Game({
           id: `${s.batchId || 'b'}-${n + 1}`,
           config: s.config,
-          players: s.players.map((p) => ({ id: p.id, name: p.name, provider: p.provider, model: p.model, effort: p.effort, colour: p.colour, instructions: p.instructions })),
+          players: seated.map((p) => ({ id: p.id, name: p.name, provider: p.provider, model: p.model, effort: p.effort, colour: p.colour, instructions: p.instructions })),
           decider,
-          seed: s.seed != null && s.seed !== '' ? Number(s.seed) + n : undefined,
+          seed,
           onEvent: (ev, g) => this.hooks.onEvent && this.hooks.onEvent(ev, g),
           onLlm: (rec, g) => this.hooks.onLlm && this.hooks.onLlm(rec, g),
         });

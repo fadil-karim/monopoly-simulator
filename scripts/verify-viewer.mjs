@@ -32,7 +32,7 @@ must(/FINISHED/.test(await text('#g-status')), 'status reads FINISHED');
 must(new RegExp(`event ${N} of ${N}`).test(await text('#r-info')), 'replay sits at the end: ' + await text('#r-info'));
 must(new RegExp(`round ${L.rounds} · turn ${L.turns}`).test(await text('#centre')), 'centre shows the final round and turn');
 must(/GOES|Goes/.test(await text('#centre')) && new RegExp('Winner: ' + L.winnerName).test(await text('#centre')), 'match stats and the winner in the centre');
-must((await page.$$('#player-cards .pcard')).length === 4, 'four player cards');
+must((await page.$$('#player-cards .pcard')).length === L.players.length, `a card for each of the ${L.players.length} players`); // the latest game sets the count: the pool draw seats any number up to eight
 if (L.players.some((p) => p.bankrupt)) must(/BANKRUPT/i.test(await text('#player-cards')), 'bankrupt players marked');
 const rect = await page.evaluate(() => { const r = document.querySelector('.board-wrap').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
 must(rect, 'board fully inside the window');

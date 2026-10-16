@@ -1,0 +1,16 @@
+Done the way you describe. The config now holds a pool of models and a number of seats; every game draws that many from the pool at random, never the same model twice, so no model plays against itself, and a pool smaller than the seats plays whole. The default pool has nine models and eight seats, the most the standard board takes, so nine take turns at a table of eight with a different eight each game: Claude Opus 5.5 at xhigh and Gemini 4 Argon direct, GPT-6.1 Sol, Grok 4.7, Kimi K3 and Nemotron 3 Ultra through Perplexity, MiMo-V2.6-Pro, Qwen3.8 Max and DeepSeek V4 Pro through OpenRouter.
+
+The rules the runner applies:
+
+- `seats` in the config or `--seats` on the command line sets the table; the standard board clamps it to eight with a note, and the Mega board takes what you set.
+- A model listed twice in the pool is seated once a game, with a note at start; the rules-based bot is not a model and can fill any number of seats, which keeps the test games working.
+- The seating order is still shuffled, and a `--seed` makes both the draw and the game repeatable.
+
+To add models, append them to the pool in a copy at `runner/config.json` (or in the default file) and nothing else changes.
+
+Verified before the push: dry runs of the draw (eight of nine, different each game; a pool of four seating four; nine asked on the standard board clamped to eight; a twice-listed model seated once), the simulator invariants, the replay check, the deploy dry run, the page rendered, two bot games played against a local Worker, and the headless viewer suite against it, which now takes the player count from the latest game instead of assuming four. Pushed to the branch and fast-forwarded to main.
+
+```
+Tag: v1.14  —  Title: A pool of models, eight drawn to each table
+Description: Every game now seats up to eight models drawn at random from the pool in the config, never the same model twice, so the pool can grow past eight and no model ever plays against itself; a pool smaller than the seats plays whole. Qwen3.8 Max is back in the pool beside DeepSeek V4 Pro, so nine models take turns at the table of eight.
+```
