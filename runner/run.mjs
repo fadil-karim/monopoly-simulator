@@ -279,7 +279,8 @@ async function runBatch(batchNo) {
   if (!dry) {
     const h = await fetch(`${site}/api/health`).then((r) => r.json()).catch((e) => ({ error: e.message }));
     if (!h.ok) die(`the site did not answer: ${h.error || JSON.stringify(h)}`);
-    if (!h.db) die('the site has no database yet: create it and add the binding (README, "Setting up the database")');
+    if (!h.db) die('the site has no database yet: see "Setting up the site" in the README');
+    if (h.token === false) die('the site has no runner token yet: add a secret named RUNNER_TOKEN to the Worker in Cloudflare (README, "Setting up the site") and give the runner the same value');
   }
   let batchNo = 0;
   for (;;) {

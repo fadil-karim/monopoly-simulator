@@ -103,10 +103,10 @@ decision and is counted as a fallback.
   Builds on every push to `main`. There is nothing to start: the Worker
   serves the viewer and answers `/api/*`.
 - **The data** lives in Cloudflare D1, a SQLite database bound to the Worker
-  (`migrations/0001_init.sql` is its schema: games, seats, events, model
-  calls). The runner writes into it through the API as a game is played;
-  viewers read from it. Until you create the database the site says so and
-  shows an empty board.
+  (`migrations/` holds its schema: games, seats, events, model calls). The
+  deploy creates the database and binds it, and the Worker lays out its
+  tables the first time it reaches it. The runner writes into it through the
+  API as a game is played; viewers read from it.
 - **The games** are played by `runner/run.mjs`, a Node program you run on
   any machine that holds your API keys: your laptop, a VPS, a cron job. It
   needs Node 20 or later, the keys in `runner/.env`, and the site's address
@@ -115,23 +115,23 @@ decision and is counted as a fallback.
 
 ## Setting up the site
 
-1. Deploy once (pushing to `main` deploys through Workers Builds). Without a
-   database every data route answers 503 and the viewer says so.
-2. Create the database and bind it:
-   ```bash
-   npx wrangler d1 create monopoly-ai
-   ```
-   paste the id it prints into the `d1_databases` block in `wrangler.jsonc`,
-   uncomment the block, then apply the schema:
-   ```bash
-   npm run migrate        # wrangler d1 migrations apply DB --remote
-   ```
-   and push: the deploy now carries the binding.
-3. Give the runner its token, a long random string of your choosing:
+1. Deploy (pushing to `main` deploys through Workers Builds). The deploy
+   creates a D1 database named `monopoly-ai` in your Cloudflare account, or
+   connects to the one of that name already there, and binds it; there is no
+   id to paste, and later deploys keep the same database. The Worker applies
+   the schema itself the first time it reaches the database, recording each
+   migration in `d1_migrations` as wrangler does, so `npm run migrate` still
+   works and finds nothing left to do.
+2. Give the runner its token, a long random string of your choosing, once: in
+   the Cloudflare dashboard open the `monopoly-simulator` Worker, then
+   Settings, then Variables and Secrets, and add a secret named
+   `RUNNER_TOKEN`; or from the repo:
    ```bash
    npx wrangler secret put RUNNER_TOKEN
    ```
-4. Optional narrator, for the "ask the game" box: `npx wrangler secret put
+   The runner checks the site before it plays and says which of the two is
+   missing.
+3. Optional narrator, for the "ask the game" box: `npx wrangler secret put
    NARRATOR_API_KEY`, and `NARRATOR_PROVIDER`, `NARRATOR_MODEL`,
    `NARRATOR_EFFORT`, `NARRATOR_BASE` as vars or secrets (defaults: Anthropic,
    `claude-sonnet-5-5`, low). `ASK_LIMIT` caps questions per address per hour
@@ -159,7 +159,6 @@ same without the page:
 
 ```bash
 cat > runner/.env <<'ENV'
-SITE=https://monopoly-simulator.YOUR-ACCOUNT.workers.dev
 RUNNER_TOKEN=the same string as the secret
 ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
@@ -171,7 +170,10 @@ node runner/run.mjs --list-models openrouter   # and the OpenRouter ones
 node runner/run.mjs --loop
 ```
 
-That plays the default table, `runner/config.default.json`: eight seats
+That plays the default table, `runner/config.default.json`, on the site it
+names, https://monopoly.basilicalabs.ai (`SITE` or `--site` points it
+elsewhere; the dashboard offers it whenever the table in use leaves the site
+blank): eight seats
 drawn at random from its pool of nine for every game, never the same model
 twice, Claude on the Anthropic API, Gemini on Google's, ChatGPT, Grok, Kimi
 and Nemotron through Perplexity's Agent API with one key, and MiMo, Qwen
@@ -197,6 +199,7 @@ reply, the parsed decision, latency and tokens always are.
 Public, read-only, JSON unless noted:
 
 - `GET /api/live`: the games running now and the latest finished one.
+- `GET /api/health`: whether the site has its database and the runner's token.
 - `GET /api/games?limit=50&offset=0&status=finished`: the list, newest first.
 - `GET /api/games/<id>`: the game with its players, result, summary and recap.
 - `GET /api/games/<id>/events?after=0&limit=1000`: the event log, paged by
@@ -217,7 +220,7 @@ games/<id>/calls`, `POST games/<id>/finish`, `POST games/<id>/abort`,
 
 ```bash
 npm install
-npm run migrate:local      # the schema into a simulated local database
+npm run migrate:local      # the schema into a simulated local database (optional: the Worker applies it on first use)
 npm run dev                # wrangler dev --env local, with RUNNER_TOKEN=local-dev-token
 node runner/run.mjs --config runner/config.bots.json --token local-dev-token --games 2
 ```
@@ -265,7 +268,7 @@ scripts/simulate.mjs         headless engine check
 scripts/check-replay.mjs     the replay reducer against the engine
 scripts/verify-viewer.mjs    the viewer in headless Chromium
 scripts/check-providers.mjs  the provider adapters against a mock server
-wrangler.jsonc               Worker + assets + (once created) the D1 binding
+wrangler.jsonc               Worker + assets + the D1 binding (the deploy creates the database)
 ```
 
 ## Rule notes

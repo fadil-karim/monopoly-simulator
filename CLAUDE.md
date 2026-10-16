@@ -24,10 +24,10 @@ public/            everything served as assets
                    app/names.js the board editions (names by position, currencies) the viewer reads a game as
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
-migrations/        the D1 schema (games, game_players, events, llm_calls, asks)
-runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
+migrations/        the D1 schema (games, game_players, events, llm_calls, asks), applied by the Worker itself on first use
+runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), verify-viewer.mjs (the viewer in headless Chromium)
-wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + env.local with a simulated D1; the production d1_databases block stays commented out until the owner has created the database
+wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/runner scripts
 prompt text/       the AI-instruction archive for the version in service
 ```
@@ -76,7 +76,8 @@ on Save or Start, writes the site, the token and the keys to `runner/.env`
 only when "remember" is ticked, and starts `run.mjs` as a child process
 with the keys in its environment, streaming its output to the page
 (polled every 1.5 s) and counting the finished games; Stop sends SIGINT,
-which the runner takes as its orderly stop.
+which the runner takes as its orderly stop. When the table in use leaves the
+site blank, the form offers the default table's (`defaultSite`).
 
 The Worker keeps games, seats, events and calls in D1 (`migrations/`). A
 model is identified by `model_key` = `provider/model@effort`, and
@@ -85,14 +86,24 @@ model is identified by `model_key` = `provider/model@effort`, and
 `/transcript?compact=1`, `/export`, `/api/stats/monopoly`,
 `/api/stats/models` (aggregated in `src/aggregate.js` from `games.summary`
 and `game_players.stats`, edge-cached a minute; finished games' events and
-transcripts an hour). `POST /api/games/:id/ask` answers questions over the
+transcripts an hour); `/api/health` says whether the site has its database
+(`db`) and the runner's token (`token`), which the runner checks before it
+plays. `POST /api/games/:id/ask` answers questions over the
 compact transcript when `NARRATOR_API_KEY` is set (`NARRATOR_PROVIDER`,
 `NARRATOR_MODEL`, `NARRATOR_EFFORT`, `NARRATOR_BASE`; `ASK_LIMIT` per
 address per hour via the `asks` table), otherwise 404 `{ enabled: false }`.
-Without `env.DB` every data route answers 503 and the viewer says the
-database is not set up yet; the deploy still succeeds. The owner creates the
-database once (`wrangler d1 create`, paste the id, uncomment the block,
-`npm run migrate`, `wrangler secret put RUNNER_TOKEN`).
+The deploy creates and binds the database, and the Worker lays out its own
+tables: `ensureSchema`, the first time an isolate reaches the database,
+applies every file in `MIGRATIONS` (the `migrations/` files imported as text)
+not yet recorded in `d1_migrations`, the table and shape wrangler's `d1
+migrations apply` keeps, each as one batch with its record, so a migration
+lands whole or not at all, wrangler and the Worker each see what the other
+has done, and an isolate that loses a race to apply the same one finds the
+record written. A new migration file is added to `MIGRATIONS` too. Without
+`env.DB` every data route answers 503 and the viewer says the database is
+not set up yet. The owner's one step is the `RUNNER_TOKEN` secret, set once
+in the Worker's settings in the Cloudflare dashboard or with `wrangler secret
+put RUNNER_TOKEN`.
 
 The viewer (`public/assets/app/viewer.js`) routes by hash: `#live` (the
 running game, following as events arrive, or the latest finished one; polls
@@ -214,7 +225,7 @@ the rules-based bot (`ai_fallback`).
 
 ```bash
 npm install
-npm run migrate:local   # the schema into the simulated local database
+npm run migrate:local   # the schema into the simulated local database (optional: the Worker applies it on first use)
 npm run dev             # wrangler dev --env local (RUNNER_TOKEN=local-dev-token)
 node runner/run.mjs --config runner/config.bots.json --token local-dev-token --games 2
 ```

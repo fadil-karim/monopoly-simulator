@@ -1,18 +1,20 @@
 // The site's Worker: serves the viewer from public/, keeps the match history
 // in D1, takes the runner's uploads (bearer token), and answers the viewer's
-// reads. Without a database bound every data route answers 503 and the viewer
-// says so; the owner creates the database once (see README).
+// reads. The deploy creates and binds the database (wrangler.jsonc) and the
+// Worker lays out its own tables the first time it reaches it (ensureSchema);
+// without a database bound every data route answers 503 and the viewer says so.
 import { ReplayGame } from '../public/assets/app/replay.js';
 import { transcript } from '../public/assets/app/transcript.js';
 import { callModel } from '../public/assets/app/providers.js';
 import { aggregateMonopoly, aggregateModels } from './aggregate.js';
+import schema0001 from '../migrations/0001_init.sql';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization' };
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...CORS, ...headers } });
 const fail = (message, status = 400) => json({ error: message }, status);
 const now = () => new Date().toISOString();
 const parse = (s, d = null) => { if (s == null) return d; try { return JSON.parse(s); } catch { return d; } };
-const clampInt = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.floor(n))) : d; };
+const clampInt = (v, lo, hi, d) => { const n = v == null || v === '' ? NaN : Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.floor(n))) : d; };
 const modelKey = (p) => `${p.provider || 'heuristic'}/${p.model || ''}${p.effort ? '@' + p.effort : ''}`;
 
 export default {
@@ -32,8 +34,9 @@ export default {
 async function route(request, env, ctx, url) {
   const path = url.pathname.replace(/\/+$/, '');
   const m = request.method;
-  if (path === '/api/health') return json({ ok: true, db: !!env.DB, narrator: !!env.NARRATOR_API_KEY, time: now() });
-  if (!env.DB) return json({ error: 'no database bound', help: 'Create the D1 database and add the binding to wrangler.jsonc (see README).' }, 503);
+  if (path === '/api/health') return json({ ok: true, db: !!env.DB, token: !!env.RUNNER_TOKEN, narrator: !!env.NARRATOR_API_KEY, time: now() });
+  if (!env.DB) return json({ error: 'no database bound', help: 'The deploy binds the database named in wrangler.jsonc (see README, "Setting up the site").' }, 503);
+  await ensureSchema(env.DB);
   let r;
   if (m === 'GET') {
     if (path === '/api/live') return live(env);
@@ -64,6 +67,31 @@ async function route(request, env, ctx, url) {
     return deleteGame(env, r[1]);
   }
   return fail('not found', 404);
+}
+
+// ---------- the schema ----------
+// The Worker applies the migrations itself, the first time an isolate reaches the database: every file in
+// MIGRATIONS not yet recorded in d1_migrations, the table wrangler's `d1 migrations apply` keeps, in its shape
+// and under the file's name, so either can run them and each sees what the other has done. A migration runs as
+// one batch with its record, so it lands whole or not at all; when two isolates race on the same one, the
+// loser's batch rolls back and it finds the record written. A new file in migrations/ is added here too.
+const MIGRATIONS = [['0001_init.sql', schema0001]];
+let schemaReady = false;
+async function ensureSchema(db) {
+  if (schemaReady) return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)').run();
+  const { results } = await db.prepare('SELECT name FROM d1_migrations').all();
+  const done = new Set(results.map((r) => r.name));
+  for (const [name, sql] of MIGRATIONS) {
+    if (done.has(name)) continue;
+    const statements = sql.replace(/--[^\n]*/g, '').split(';').map((x) => x.trim()).filter(Boolean);
+    try {
+      await db.batch([...statements.map((x) => db.prepare(x)), db.prepare('INSERT INTO d1_migrations (name) VALUES (?)').bind(name)]);
+    } catch (e) {
+      if (!(await db.prepare('SELECT 1 AS x FROM d1_migrations WHERE name = ?').bind(name).first())) throw e;
+    }
+  }
+  schemaReady = true;
 }
 
 // ---------- helpers ----------

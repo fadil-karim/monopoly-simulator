@@ -16,17 +16,18 @@
   "observability": {
     "enabled": true
   },
-  // The database. Create it once in the account, paste its id, uncomment, and
-  // apply the migrations - see README "Setting up the database". Until then the
-  // deploy still succeeds and every data route answers 503.
+  // The database. No id is needed: the deploy creates a D1 database named
+  // monopoly-ai in the account, or connects to the one of that name already
+  // there, and binds it, and later deploys keep it (wrangler's automatic
+  // provisioning). The Worker applies the migrations itself on first use. The
+  // one step left to the owner is the runner's token, set once as a secret, in
+  // the Worker's Settings in the Cloudflare dashboard or with
   //
-  //   npx wrangler d1 create monopoly-ai
-  //   npx wrangler d1 migrations apply DB --remote
   //   npx wrangler secret put RUNNER_TOKEN
   //
-  // "d1_databases": [
-  //   { "binding": "DB", "database_name": "monopoly-ai", "database_id": "<paste the id here>", "migrations_dir": "migrations" }
-  // ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "monopoly-ai", "migrations_dir": "migrations" }
+  ],
   // Local development and the test suite use this environment with a simulated database:
   //   npx wrangler d1 migrations apply DB --local --env local
   //   npx wrangler dev --env local

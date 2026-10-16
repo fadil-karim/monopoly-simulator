@@ -47,6 +47,8 @@ function writeEnvFile(vars) {
   writeFileSync(ENV, out.filter((l, i, a) => !(l === '' && i === a.length - 1)).join('\n') + '\n');
 }
 const readConfig = () => JSON.parse(readFileSync(existsSync(CONFIG) ? CONFIG : DEFAULT, 'utf8'));
+// The site of the default table, offered when the table in use leaves it blank.
+const defaultSite = () => { try { return JSON.parse(readFileSync(DEFAULT, 'utf8')).site || ''; } catch { return ''; } };
 
 // ---------- the runner as a child process ----------
 const state = { child: null, log: [], startedAt: null, games: 0, exit: null };
@@ -111,7 +113,7 @@ const server = http.createServer(async (req, res) => {
       const keys = {}; for (const k of KEY_NAMES) if (env[k]) keys[k] = env[k];
       return json(res, 200, {
         running: !!state.child, startedAt: state.startedAt, games: state.games, exit: state.exit, log: state.log.slice(-250),
-        config: readConfig(), configFile: existsSync(CONFIG) ? 'runner/config.json' : 'runner/config.default.json',
+        config: readConfig(), configFile: existsSync(CONFIG) ? 'runner/config.json' : 'runner/config.default.json', defaultSite: defaultSite(),
         env: { SITE: env.SITE || '', RUNNER_TOKEN: env.RUNNER_TOKEN || '', keys },
         providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, env: p.env || null, kind: p.kind, models: p.models || [], keyUrl: p.keyUrl || null })),
         efforts: EFFORTS,

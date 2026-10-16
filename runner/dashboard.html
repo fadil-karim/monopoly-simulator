@@ -179,7 +179,7 @@ function gather() {
 }
 function fill() {
   cfg = S.config; keys = { ...S.env.keys };
-  $('#site').value = S.env.SITE || cfg.site || '';
+  $('#site').value = S.env.SITE || cfg.site || S.defaultSite || '';
   $('#token').value = S.env.RUNNER_TOKEN || '';
   $('#edition').value = (cfg.config && cfg.config.edition) || 'standard';
   $('#seats').value = cfg.seats || 8;
