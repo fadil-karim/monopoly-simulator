@@ -9,6 +9,8 @@ import { callModel } from '../public/assets/app/providers.js';
 import { aggregateMonopoly, aggregateModels } from './aggregate.js';
 import schema0001 from '../migrations/0001_init.sql';
 import schema0002 from '../migrations/0002_cost.sql';
+import schema0003 from '../migrations/0003_site.sql';
+import DEFAULT_TABLE from '../runner/config.default.json';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization' };
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...CORS, ...headers } });
@@ -44,6 +46,7 @@ async function route(request, env, ctx, url) {
     if (path === '/api/games') return listGames(env, url);
     if (path === '/api/stats/monopoly') return cached(request, ctx, 60, () => statsMonopoly(env));
     if (path === '/api/stats/models') return cached(request, ctx, 60, () => statsModels(env));
+    if (path === '/api/players') return cached(request, ctx, 30, () => thePlayers(env));
     if ((r = path.match(/^\/api\/games\/([^/]+)$/))) return getGame(env, r[1]);
     if ((r = path.match(/^\/api\/games\/([^/]+)\/events$/))) return getEvents(request, ctx, env, r[1], url);
     if ((r = path.match(/^\/api\/games\/([^/]+)\/calls$/))) return getCalls(request, ctx, env, r[1], url);
@@ -58,6 +61,7 @@ async function route(request, env, ctx, url) {
       const body = await request.json().catch(() => null);
       if (!body) return fail('invalid JSON');
       if (path === '/api/ingest/games') return ingestGame(env, body);
+      if (path === '/api/ingest/pool') return ingestPool(env, body);
       if ((r = path.match(/^\/api\/ingest\/games\/([^/]+)\/events$/))) return ingestEvents(env, r[1], body);
       if ((r = path.match(/^\/api\/ingest\/games\/([^/]+)\/calls$/))) return ingestCalls(env, r[1], body);
       if ((r = path.match(/^\/api\/ingest\/games\/([^/]+)\/finish$/))) return ingestFinish(env, r[1], body);
@@ -77,7 +81,7 @@ async function route(request, env, ctx, url) {
 // and under the file's name, so either can run them and each sees what the other has done. A migration runs as
 // one batch with its record, so it lands whole or not at all; when two isolates race on the same one, the
 // loser's batch rolls back and it finds the record written. A new file in migrations/ is added here too.
-const MIGRATIONS = [['0001_init.sql', schema0001], ['0002_cost.sql', schema0002]];
+const MIGRATIONS = [['0001_init.sql', schema0001], ['0002_cost.sql', schema0002], ['0003_site.sql', schema0003]];
 let schemaReady = false;
 async function ensureSchema(db) {
   if (schemaReady) return;
@@ -281,6 +285,51 @@ async function statsMonopoly(env) {
   const { results } = await env.DB.prepare("SELECT id, edition, rounds, turns, duration_ms, end_reason, summary, started_at FROM games WHERE status = 'finished' ORDER BY started_at DESC LIMIT 5000").all();
   const running = await env.DB.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'running'").first();
   return json({ ...aggregateMonopoly(results), running: running ? running.n : 0, time: now() });
+}
+// ---------- the players: the pool of models, for the homepage ----------
+// The pool is what the runner last said it draws its tables from (ingestPool); before it has said, the models that
+// have played, and before any has, the default table. Each model, once (by provider, model and effort), with its
+// Monopoly record over the finished games and whether it is at a table now.
+const cleanStr = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+async function ingestPool(env, b) {
+  const list = Array.isArray(b.players) ? b.players.slice(0, 64) : [];
+  const players = list.filter((p) => p && typeof p === 'object').map((p) => ({
+    id: cleanStr(p.id, 64), name: cleanStr(p.name, 80), provider: cleanStr(p.provider, 40) || 'heuristic', model: cleanStr(p.model, 160),
+    effort: cleanStr(p.effort, 20) || null, colour: /^#[0-9a-f]{3,8}$/i.test(String(p.colour || '')) ? p.colour : null,
+  }));
+  if (!players.length) return fail('players required');
+  await env.DB.prepare('INSERT INTO site_meta (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
+    .bind('pool', JSON.stringify({ players, seats: clampInt(b.seats, 2, 12, null) }), now()).run();
+  return json({ ok: true, players: players.length });
+}
+async function thePlayers(env) {
+  const row = await env.DB.prepare("SELECT value, updated_at FROM site_meta WHERE key = 'pool'").first();
+  const { results: seats } = await env.DB.prepare('SELECT gp.*, g.status FROM game_players gp JOIN games g ON g.id = gp.game_id').all();
+  const models = aggregateModels(seats.filter((r) => r.status === 'finished')).models;
+  const playing = new Set(seats.filter((r) => r.status === 'running').map((r) => r.model_key));
+  let pool = row ? parse(row.value, {}).players || [] : [];
+  let source = 'runner';
+  if (!pool.length) {
+    const seen = new Map();
+    for (const r of seats) if (!seen.has(r.model_key)) seen.set(r.model_key, { id: r.player_id, name: r.name, provider: r.provider, model: r.model, effort: r.effort, colour: r.colour });
+    pool = [...seen.values()];
+    source = 'games';
+  }
+  if (!pool.length) { pool = DEFAULT_TABLE.players || []; source = 'default'; }
+  const once = new Map();
+  for (const p of pool) { const k = modelKey(p); if (!once.has(k)) once.set(k, p); }
+  const players = [...once.entries()].map(([key, p]) => {
+    // the record under this exact effort, else the model's games at every effort
+    const mine = models.filter((x) => x.key === key);
+    const all = mine.length ? mine : models.filter((x) => x.provider === p.provider && x.model === p.model);
+    const games = all.reduce((a, x) => a + x.games, 0), wins = all.reduce((a, x) => a + x.wins, 0);
+    return {
+      key, name: p.name || '', provider: p.provider || 'heuristic', model: p.model || '', effort: p.effort || null, colour: p.colour || null,
+      playing: playing.has(key) || [...playing].some((k) => k.startsWith(`${p.provider}/${p.model}@`) || k === `${p.provider}/${p.model}`),
+      monopoly: { games, wins, winRate: games ? wins / games : 0 },
+    };
+  });
+  return json({ players, source, updatedAt: row ? row.updated_at : null, time: now() });
 }
 async function statsModels(env) {
   const { results } = await env.DB.prepare("SELECT gp.* FROM game_players gp JOIN games g ON g.id = gp.game_id WHERE g.status = 'finished'").all();

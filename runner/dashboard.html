@@ -264,7 +264,7 @@ function renderRun() {
   log.innerHTML = S.log.length ? S.log.map((l) => `<span class="${/^■ /.test(l) ? 'win' : /^! |error|failed/i.test(l) ? 'warn' : ''}">${esc(l)}</span>`).join('\n') : 'Nothing running.';
   if (atEnd) log.scrollTop = log.scrollHeight;
   const site = $('#site').value.trim().replace(/\/$/, '');
-  $('#live').href = site ? site + '/#live' : '#';
+  $('#live').href = site ? site + '/monopoly/#live' : '#';
 }
 async function refresh(full) {
   const s = await api('/api/state');

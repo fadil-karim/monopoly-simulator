@@ -26,3 +26,5 @@
 
 /
   Cache-Control: public, max-age=0, must-revalidate
+/monopoly/
+  Cache-Control: public, max-age=0, must-revalidate

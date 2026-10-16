@@ -1,0 +1,60 @@
+/* The homepage of the games: the players at the top, then a card for each game. It takes its palette, its face and
+   its dark theme from site.css. */
+.plate.ink { background: var(--ink); color: var(--bg); }
+.home .tab.active { background: var(--accent); color: #fff; }
+.home main { max-width: 1240px; }
+.home .lead { margin: 0 0 12px; max-width: 75ch; color: var(--muted); font-size: 15px; }
+.home .section-title { font-size: 22px; margin: 26px 2px 12px; }
+
+/* the players: the pool of models, each a card with its sticker, its name and its record */
+.players { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.player { position: relative; display: flex; gap: 12px; align-items: flex-start; background: var(--surface-2); border: 1px solid var(--line); border-top: 5px solid var(--pc); border-radius: 10px; padding: 12px 12px 10px; min-width: 0; }
+.player .who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.player .name { font-size: 17px; line-height: 1.2; }
+.player .sub { font-size: 13px; color: var(--text); }
+.player .id { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.player .seat { font-size: 12px; color: var(--muted); }
+.player .rec { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.player .badge { position: absolute; top: 8px; right: 8px; }
+/* a model's mark: its maker's whole logo cut out like a sticker, as its token wears it on the boards */
+.sticker, .mini { flex: none; display: inline-block; background: var(--logo) center / contain no-repeat; filter: drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff) drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+.sticker { width: 48px; height: 48px; margin: 4px 2px 0; }
+.mini { width: 20px; height: 20px; margin: 0 3px; filter: drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff) drop-shadow(0 1px 0 #fff) drop-shadow(0 -1px 0 #fff) drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
+.sticker.initial, .mini.initial { background: var(--pc); color: #fff; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; filter: none; box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0,0,0,.35); }
+.sticker.initial { font-size: 22px; }
+.mini.initial { font-size: 11px; }
+
+/* the games */
+.games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.game-card { display: flex; gap: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.game-card.live-game { grid-column: 1 / -1; border: 2px solid var(--accent); }
+.game-card .art { flex: none; width: 96px; height: 96px; display: block; }
+.game-card.live-game .art { width: 132px; height: 132px; }
+.game-card .art svg { width: 100%; height: 100%; display: block; }
+.game-card .body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.game-card .title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.game-card h3 { margin: 0; font-size: 20px; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 700; }
+.game-card p { margin: 0; font-size: 14px; line-height: 1.5; }
+.game-card.soon { opacity: .9; }
+.game-card.soon .art { filter: saturate(.75); }
+.home .btn { text-decoration: none; display: inline-flex; align-items: center; }
+.status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 13px; }
+.status-line .marks { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px 0; }
+.badge { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.badge.live { background: var(--accent); border-color: var(--accent); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
+.badge.soon { background: var(--surface-2); }
+.home footer { max-width: 75ch; margin: 28px auto 0; }
+
+@media (max-width: 760px) { .games { grid-template-columns: 1fr; } }
+/* on a phone two players to a row, each its sticker, its name, its maker and its record */
+@media (max-width: 640px) {
+  .game-card { flex-direction: column; gap: 10px; }
+  .game-card .art, .game-card.live-game .art { width: 84px; height: 84px; }
+  .players { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .player { flex-direction: column; gap: 6px; padding: 10px 9px 9px; }
+  .player .sticker { width: 34px; height: 34px; margin: 0 2px; }
+  .player .name { font-size: 15px; }
+  .player .sub, .player .rec { font-size: 12px; }
+  .player .id, .player .seat { display: none; }
+  .player .badge { top: 6px; right: 6px; }
+}

@@ -316,6 +316,10 @@ async function runBatch(batchNo) {
     // otherwise stop the runner with model calls already made. A site from before this check answers 404 and is let be.
     const check = await fetch(`${site}/api/ingest/check`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: '{}' }).then((r) => r.status, () => 0);
     if (check === 401) die(tokenRejected());
+    // The pool, for the site's homepage, which lists it as "The players": who, by which provider, model and effort.
+    // A site from before the homepage answers 404, and the games go on.
+    await post('/api/ingest/pool', { players: players.map((p) => ({ id: p.id, name: p.name, provider: p.provider, model: p.model, effort: p.effort || null, colour: p.colour || null })), seats }, 2)
+      .catch((e) => console.warn(`  the site did not take the pool (${e.message}); its list of players stays as it was`));
   }
   let batchNo = 0;
   for (;;) {

@@ -6,7 +6,9 @@
 //   node runner/run.mjs --config runner/config.bots.json --token local-dev-token --games 2
 //   node scripts/verify-viewer.mjs                  (screenshots in .render-check/viewer/)
 //
-// It checks the live tab, the replay controls, the games list, both statistics
+// It checks the homepage (the players against the pool the site holds, the games
+// and an old link to the viewer), the Monopoly page at /monopoly/: the live tab,
+// the replay controls, the games list, both statistics
 // pages, a live game played slowly by the bots while the page follows it, the
 // ledgers under a game against the statistics worked out here from its events,
 // the roll charts' label and the phone layout; with a trading game seeded by
@@ -17,10 +19,12 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { ReplayGame } from '../public/assets/app/replay.js';
 import { StatsTracker } from '../public/assets/app/stats.js';
+import { modelLogo } from '../public/assets/app/pricing.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const out = process.env.OUT || '.render-check/viewer';
 mkdirSync(out, { recursive: true });
 const url = (process.env.SITE || 'http://127.0.0.1:8789').replace(/\/?$/, '/');
+const mono = url + 'monopoly/'; // the Monopoly viewer's page; the homepage of the games is the site's root
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = []; page.on('pageerror', (e) => errors.push('pageerror: ' + e.message)); page.on('console', (m) => { if (m.type() === 'error' && !/status of 404/.test(m.text())) errors.push('console: ' + m.text()); }); // a missing game answers 404 by design
@@ -29,11 +33,28 @@ const text = (sel) => page.evaluate((s) => (document.querySelector(s) || { inner
 const hidden = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return !el || el.classList.contains('hidden') || !el.offsetParent; }, sel);
 const at = () => page.evaluate(() => document.querySelector('#r-info').textContent); // kept up to date while the bar is hidden
 const wait = (ms) => page.waitForTimeout(ms);
+// 0. the homepage: the players at the top, the pool as the site has it, then the games, Monopoly first and the four to come
+const pl = await (await fetch(url + 'api/players')).json();
+await page.goto(url); await page.waitForFunction(() => document.querySelectorAll('#players .player').length > 0 && !/Looking/.test(document.querySelector('#mono-status').textContent), null, { timeout: 15000 });
+must(await page.$eval('main h2', (h) => h.textContent) === 'The players', 'the homepage opens with the players');
+must((await page.$$('#players .player')).length === pl.players.length, `a card for each of the ${pl.players.length} players in the pool (${pl.source})`);
+const withLogo = pl.players.filter((p) => modelLogo(p.provider, p.model)).length;
+must((await page.$$('#players .sticker:not(.initial)')).length === withLogo, `each of the ${withLogo} models wears its maker's logo`);
+must(JSON.stringify(await page.$$eval('.game-card h3', (h) => h.map((x) => x.textContent))) === JSON.stringify(['Monopoly', 'Chess', 'Checkers', 'Battleship', 'Connect 4']) && (await page.$$('.game-card .badge.soon')).length === 4, 'Monopoly, then chess, checkers, Battleship and Connect 4 coming soon');
+must((await page.getAttribute('.live-game .btn.primary', 'href')) === '/monopoly/#live' && /kept/.test(await text('#mono-status')), 'Monopoly leads to its own page and says what is on its table: ' + (await text('#mono-status')).replace(/\s+/g, ' '));
+await page.screenshot({ path: `${out}/home.png`, fullPage: true });
+// an old link loads the homepage, which sends it on at once (the first navigation may be cut short by the second)
+await page.goto('about:blank'); await page.goto(url + '#games').catch(() => {}); await page.waitForURL(/\/monopoly\/#games$/, { timeout: 10000 });
+must(true, 'a link to the viewer from before the homepage (/#games) opens on the Monopoly page');
+await page.goto(url); await page.evaluate(() => { location.hash = '#stats'; }); await page.waitForURL(/\/monopoly\/#stats$/, { timeout: 10000 });
+must(true, 'and so does one typed while the homepage is open (#stats)');
+await page.goto(url); await page.click('.tabs a[href="#the-games"]'); await wait(300);
+must(new URL(page.url()).pathname === '/' && new URL(page.url()).hash === '#the-games', "the homepage's own tabs stay on the homepage");
 // 1. live tab with no running game: the latest finished game
 const liveNow = await (await fetch(url + 'api/live')).json();
 const L = liveNow.latest; const N = L.eventCount;
 const list = await (await fetch(url + 'api/games?limit=50')).json();
-await page.goto(url); await page.waitForFunction(() => /FINISHED|LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.goto(mono); await page.waitForFunction(() => /FINISHED|LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must(/No game is being played right now/.test(await text('#notice')), 'live tab says the table is quiet and shows the latest game');
 must(/FINISHED/.test(await text('#g-status')), 'status reads FINISHED');
 must(await hidden('#replay'), 'the Live tab shows no replay controls');
@@ -89,7 +110,7 @@ must(await page.evaluate(() => document.querySelector('#n-ask').classList.contai
 const tl = await page.getAttribute('#n-transcript', 'href');
 must(/\/api\/games\/.+\/transcript$/.test(tl), 'transcript link: ' + tl);
 // 5. games list
-await page.goto(url + '#games'); await page.waitForSelector('#games-body tr');
+await page.goto(mono + '#games'); await page.waitForSelector('#games-body tr');
 must((await page.$$('#games-body tr')).length === list.total, `all ${list.total} games listed`);
 must(new RegExp(`${list.total} games`).test(await text('#games-count')), 'count line');
 await page.screenshot({ path: `${out}/games.png` });
@@ -97,7 +118,7 @@ const second = list.games[1];
 await page.click('#games-body tr:nth-child(2) a'); await page.waitForFunction((n) => new RegExp(`event ${n} of ${n}`).test(document.querySelector('#r-info').innerText), second.eventCount, { timeout: 20000 });
 must((await text('#g-title')) === second.id && /FINISHED/.test(await text('#g-status')), 'opened the second game from the list: ' + await text('#g-title'));
 // 6. stats
-await page.goto(url + '#stats'); await page.waitForSelector('#stats .heat');
+await page.goto(mono + '#stats'); await page.waitForSelector('#stats .heat');
 const st = await text('#stats');
 const finished = list.games.filter((g) => g.status === 'finished').length;
 // the statistics are edge-cached a minute, so a run within a minute of the last one may still show the count before its own game
@@ -106,14 +127,14 @@ must((await page.$$('#stats .heat')).length >= 1 && (await page.$$eval('#stats .
 must(/Most landed on/i.test(st) && /by colour group/i.test(st) && /Every property/i.test(st) && /Old Kent Road/i.test(st), 'landings, rent and property table');
 await page.screenshot({ path: `${out}/stats.png`, fullPage: true });
 // 7. models
-await page.goto(url + '#models'); await page.waitForSelector('#models table.models');
+await page.goto(mono + '#models'); await page.waitForSelector('#models table.models');
 const mt = await text('#models');
 must(/heuristic · rules-v1/.test(mt) && /Win rate/i.test(mt) && /Each model's dice/i.test(mt), 'model stats table and charts');
 await page.screenshot({ path: `${out}/models.png`, fullPage: true });
 // 8. live: start a slow bot game and watch it
 const runner = spawn('node', ['runner/run.mjs', '--config', 'runner/config.bots.json', '--token', 'local-dev-token', '--games', '1', '--seed', '77', '--max-rounds', '12', '--delay', '250'], { stdio: 'inherit' });
 await wait(2500);
-await page.goto(url + '#live'); await page.waitForFunction(() => /LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.goto(mono + '#live'); await page.waitForFunction(() => /LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must(await page.evaluate(() => document.querySelector('#r-follow').checked) && await hidden('#replay'), 'following live, with no replay controls');
 must(/Link to this game/.test(await text('#g-link')) && !(await hidden('#g-full')), 'a running game keeps full screen and its link');
 const a = Number((await at()).match(/event (\d+)/)[1]); await wait(5000);
@@ -129,11 +150,11 @@ await wait(2500);
 must(fin === await at() && /GAME OVER/.test(await text('#events')), 'polling stopped at the end with the final event in the feed');
 must(await hidden('#replay') && /Replay this game/.test(await text('#g-link')), 'the finished live game is offered as a replay, still with no controls');
 // 9. the board when there is no game, and the edition selector
-await page.goto(url + '#game/does-not-exist'); await page.waitForFunction(() => /no game called/.test(document.querySelector('#notice').innerText), null, { timeout: 15000 });
+await page.goto(mono + '#game/does-not-exist'); await page.waitForFunction(() => /no game called/.test(document.querySelector('#notice').innerText), null, { timeout: 15000 });
 must((await page.$$('#board .cell')).length === 40 && /MONOPOLY/.test(await text('#centre')) && /No such game/.test(await text('#centre')), 'the empty board shows every square');
 must(await hidden('#replay') && await hidden('#g-full') && await hidden('#g-link'), 'no replay, full screen or link without a game');
 must(/Old Kent Road/i.test(await text('#board')) && /Mayfair/i.test(await text('#board')), 'London names on the empty board');
-await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.goto(mono + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must((await page.$$('#names-select option')).length === 7, 'the edition dropdown lists seven editions');
 await page.selectOption('#names-select', 'us'); await wait(400);
 must(await page.$eval('#names-select', (el) => el.value) === 'us' && /Atlantic City · \$/.test(await page.$eval('#names-select', (el) => el.selectedOptions[0].textContent)), 'the dropdown picks Atlantic City');
@@ -144,7 +165,7 @@ must(/Made \$/.test(await text('#player-cards')), 'the player cards are in dolla
 await page.screenshot({ path: `${out}/edition-us.png` });
 await page.reload(); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 must(await page.$eval('#names-select', (el) => el.value) === 'us' && /Boardwalk/i.test(await text('#board')), 'the choice survives a reload');
-await page.goto(url + '#stats'); await page.waitForSelector('#stats .heat');
+await page.goto(mono + '#stats'); await page.waitForSelector('#stats .heat');
 must(/Boardwalk/i.test(await text('#stats')) && /read as Atlantic City/i.test(await text('#stats')), 'the statistics read as Atlantic City too'); // the whole page: a Mega game adds a heat board that keeps London names
 await page.selectOption('#names-select', 'netherlands'); await page.waitForSelector('#stats .heat'); await wait(300);
 must(/Kalverstraat/i.test(await text('#stats')) && / €/.test(await text('#stats')), 'the Dutch board with euros after the amount');
@@ -163,7 +184,7 @@ async function statsOfGame(id) {
 const toEnd = () => page.waitForFunction(() => { const m = document.querySelector('#r-info').innerText.match(/event (\d+) of (\d+)/); return m && m[1] === m[2]; }, null, { timeout: 20000 });
 const latestNow = (await (await fetch(url + 'api/live')).json()).latest;
 const { g: lg, st: want } = await statsOfGame(latestNow.id);
-await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.goto(mono + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 await page.evaluate(() => document.querySelector('#ledgers').scrollIntoView()); await wait(900);
 must(!(await hidden('#ledgers')), 'the ledgers sit under the game');
 must(new RegExp(`^${n$(want.payments.length)} payments`).test(await text('#pay-sum')), 'every payment counted: ' + await text('#pay-sum'));
@@ -201,7 +222,7 @@ const seeded = (await (await fetch(url + 'api/games?limit=200')).json()).games.f
 if (!seeded) console.log('skip the trading game: node scripts/seed-trades.mjs puts one on the local site for the trades ledger and the logos');
 else {
   const { g: tg, st: tw } = await statsOfGame(seeded.id);
-  await page.goto(url + '#game/' + encodeURIComponent(seeded.id)); await toEnd();
+  await page.goto(mono + '#game/' + encodeURIComponent(seeded.id)); await toEnd();
   await page.click('#r-first'); await wait(250);
   must((await page.$$('.cell[data-i="0"] .tok.logo')).length === tg.players.length, `every model's token wears its maker's logo on ${tg.board[0].name}`);
   const logos = await page.$$eval('.tok.logo', (ts) => [...new Set(ts.map((t) => getComputedStyle(t).backgroundImage.match(/url\("?([^")]+)/)[1]))]);
@@ -221,13 +242,17 @@ else {
   await page.screenshot({ path: `${out}/trades.png`, fullPage: true });
 }
 // 11. dark mode
-await page.emulateMedia({ colorScheme: 'dark' }); await page.goto(url + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
+await page.emulateMedia({ colorScheme: 'dark' }); await page.goto(mono + '#live'); await page.waitForFunction(() => /FINISHED/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 await page.screenshot({ path: `${out}/live-dark.png` });
 await page.emulateMedia({ colorScheme: 'light' });
 // 12. phone
 await page.setViewportSize({ width: 390, height: 844 }); await wait(300);
 await page.screenshot({ path: `${out}/live-mobile.png`, fullPage: true });
 must(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no sideways scroll on a phone');
+await page.goto(url); await page.waitForFunction(() => document.querySelectorAll('#players .player').length > 0, null, { timeout: 15000 }); await wait(300);
+await page.screenshot({ path: `${out}/home-mobile.png`, fullPage: true });
+must(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'the homepage keeps to the phone\'s width');
+await page.goto(mono + '#live'); await page.waitForFunction(() => /FINISHED|LIVE|RUNNING/.test(document.querySelector('#g-status').innerText), null, { timeout: 20000 });
 await page.evaluate(() => document.querySelector('#ledgers').scrollIntoView()); await wait(900);
 await page.screenshot({ path: `${out}/ledgers-mobile.png` });
 must(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'the ledgers keep to the phone\'s width');

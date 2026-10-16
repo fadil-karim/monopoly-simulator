@@ -62,6 +62,10 @@ export function modelLogo(provider, model) {
   return null;
 }
 
+// Who makes the model, by its logo: the homepage's players say it beside the model's name.
+const MAKERS = { claude: 'Anthropic', gemini: 'Google', openai: 'OpenAI', grok: 'xAI', kimi: 'Moonshot AI', mimo: 'Xiaomi', qwen: 'Alibaba', deepseek: 'DeepSeek', nvidia: 'NVIDIA', glm: 'Zhipu AI', mistral: 'Mistral AI' };
+export const modelMaker = (provider, model) => MAKERS[modelLogo(provider, model)] || null;
+
 // The price in force for a model on a day: the player's own price when given, else the list.
 export function priceFor(provider, model, at = new Date(), override = null) {
   if (override && Number.isFinite(Number(override.input)) && Number.isFinite(Number(override.output))) return override;

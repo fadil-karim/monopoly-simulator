@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // For checking the viewer on this machine: plays one game in which the players trade (scripts/traders.mjs) and
 // uploads it to the local site as an aborted game, its seats labelled with the first eight models of the default
-// table so the board wears their logos. No model is called, and only a site on this machine is accepted, so a
-// scripted game can never reach the public site. scripts/verify-viewer.mjs looks for it by its id, trades-…
+// table so the board wears their logos, and gives those eight to the site as the pool, for the homepage's players.
+// No model is called, and only a site on this machine is accepted, so a scripted game can never reach the public
+// site. scripts/verify-viewer.mjs looks for it by its id, trades-…
 //   node scripts/seed-trades.mjs [--site http://127.0.0.1:8789] [--token local-dev-token] [--seed 7]
 import { readFileSync } from 'node:fs';
 import { Game } from '../public/assets/app/engine.js';
@@ -23,6 +24,8 @@ async function post(path, body) {
   return r.json();
 }
 const game = new Game({ id, seed, config: { edition: 'standard', maxRounds: 60, aiPreroll: 'always' }, players: pool, decider: traders(seed) });
+// its eight models stand as the pool, so the homepage's players can be checked with their logos
+await post('/api/ingest/pool', { players: pool, seats: pool.length });
 await post('/api/ingest/games', {
   id, batchId: 'trades', edition: 'standard', seed, config: game.config, universal: '', startedAt: new Date().toISOString(),
   runner: { version: 'seed-trades', node: process.version }, players: pool.map((p, seat) => ({ ...p, seat })),
@@ -31,4 +34,4 @@ const res = await game.run();
 for (let k = 0; k < game.events.length; k += 400) await post(`/api/ingest/games/${encodeURIComponent(id)}/events`, { events: game.events.slice(k, k + 400) });
 await post(`/api/ingest/games/${encodeURIComponent(id)}/abort`, { reason: 'a scripted game for checking the viewer' });
 const count = (t) => game.events.filter((e) => e.type === t).length;
-console.log(`${id}: ${game.events.length} events, ${count('trade_proposed')} offers, ${count('trade_counter')} counters, ${count('trade_completed')} trades; ${res.winnerName} ahead after ${res.rounds} rounds. Open ${site}/#game/${id}`);
+console.log(`${id}: ${game.events.length} events, ${count('trade_proposed')} offers, ${count('trade_counter')} counters, ${count('trade_completed')} trades; ${res.winnerName} ahead after ${res.rounds} rounds. Open ${site}/monopoly/#game/${id}`);

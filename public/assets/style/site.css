@@ -44,6 +44,7 @@ a { color: var(--accent); }
 .plate { display: inline-block; background: var(--accent); color: #fff; padding: 1px 10px 0; border: 2px solid var(--ink); border-radius: 4px; font-weight: 800; letter-spacing: .06em; transform: rotate(-3deg); margin-right: 6px; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; }
+a.brand { text-decoration: none; color: inherit; }
 .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent) url('/favicon.svg') center/cover; display: inline-block; }
 .names { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .names select { width: auto; padding: 5px 8px; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monopoly AI Simulator</title>
+  <meta name="description" content="Watch AI models play Monopoly against each other, live and move by move: up to eight of Claude, Gemini, ChatGPT, Grok, Kimi, MiMo, Qwen, DeepSeek and Nemotron at one table, drawn at random for every game, with every game kept and the statistics of the board and of every model.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style/site.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" title="All the games">
+      <span class="logo" aria-hidden="true"></span>
+      <h1><span class="plate">MONOPOLY</span> AI Simulator <small>London edition</small></h1>
+    </a>
+    <label class="names" id="names" title="Read the board as another edition: the names and the currency change, the game does not">Board <select id="names-select" aria-label="Board edition"></select></label>
+    <nav class="tabs" role="tablist">
+      <a class="tab home-tab" href="/" title="The homepage of every game">← All games</a>
+      <a class="tab" data-view="live" href="#live">Live</a>
+      <a class="tab" data-view="games" href="#games">Games</a>
+      <a class="tab" data-view="stats" href="#stats">Monopoly stats</a>
+      <a class="tab" data-view="models" href="#models">Model stats</a>
+      <a class="tab" data-view="about" href="#about">About</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="notice" class="notice hidden"></div>
+
+    <section id="view-game" class="panel">
+      <div class="gamebar">
+        <div class="gamebar-left">
+          <span id="g-status" class="status"></span>
+          <span id="g-title" class="gtitle"></span>
+          <span id="g-sub" class="muted"></span>
+        </div>
+        <div class="gamebar-right">
+          <label id="g-pick-wrap" class="hidden">Game <select id="g-pick"></select></label>
+          <button id="g-full" class="btn small" type="button" title="Full screen (F)">⛶ Full screen</button>
+          <a id="g-link" class="btn small" href="#live">Link to this game</a>
+        </div>
+      </div>
+      <div class="replay" id="replay">
+        <button id="r-first" class="btn small" title="Start">⏮</button>
+        <button id="r-back" class="btn small" title="Back one event (←)">◀</button>
+        <button id="r-play" class="btn small primary" title="Play / pause (space)">▶</button>
+        <button id="r-fwd" class="btn small" title="Forward one event (→)">▶|</button>
+        <button id="r-last" class="btn small" title="End, or live">⏭</button>
+        <select id="r-speed" title="Speed">
+          <option value="1">1 event/s</option>
+          <option value="4" selected>4 events/s</option>
+          <option value="15">15 events/s</option>
+          <option value="60">60 events/s</option>
+          <option value="turn">a turn a second</option>
+        </select>
+        <input type="range" id="r-pos" min="0" max="0" value="0">
+        <span id="r-info" class="muted"></span>
+        <label class="check small"><input type="checkbox" id="r-follow" checked> follow live</label>
+      </div>
+      <div class="play-grid">
+        <div class="board-wrap"><div id="board" class="board"></div><div id="hover-name" class="hover-name" hidden></div><button id="fs-exit" class="fs-exit" type="button" title="Exit full screen (Esc)" aria-label="Exit full screen">✕</button></div>
+        <aside class="side">
+          <div class="feed-head"><h3>Table talk</h3></div>
+          <div id="chat" class="feed chat"></div>
+          <div class="feed-head"><h3>Events</h3></div>
+          <div id="events" class="feed"></div>
+          <details>
+            <summary>Model calls</summary>
+            <div id="llm-feed" class="feed llm"></div>
+          </details>
+        </aside>
+      </div>
+      <div id="player-cards" class="player-cards"></div>
+      <div class="card cost-card">
+        <div class="card-head"><h2>What this game cost</h2><span id="cost-total" class="muted"></span></div>
+        <div id="cost-table" class="table-wrap"></div>
+        <p class="muted">Every seat's model and the API that served it, with what its calls cost in US dollars up to the move shown: the cost the API reported with each reply where it reports one (OpenRouter, Perplexity), otherwise the call's tokens at the model's list price on the day it was made.</p>
+      </div>
+      <div class="card narrator">
+        <div class="card-head"><h2>What happened</h2>
+          <div class="actions">
+            <a id="n-transcript" class="btn small" href="#" target="_blank">Transcript for an AI</a>
+            <a id="n-compact" class="btn small" href="#" target="_blank">Short transcript</a>
+            <a id="n-export" class="btn small" href="#">Full log (JSON)</a>
+          </div>
+        </div>
+        <div id="n-recap" class="recap muted">No recap yet.</div>
+        <div id="n-ask" class="ask hidden">
+          <textarea id="n-question" rows="2" placeholder="Ask about this game, e.g. why did Kimi go bankrupt? which trade decided it?"></textarea>
+          <div class="actions"><button id="n-send" class="btn primary">Ask the narrator</button><span id="n-status" class="muted"></span></div>
+          <div id="n-answer" class="answer hidden"></div>
+        </div>
+        <p class="muted">The transcripts are plain text of the whole game, written for pasting into any AI assistant. The full log carries every event and every model call.</p>
+      </div>
+      <div id="ledgers" class="ledgers hidden">
+        <div class="card ledger-card">
+          <div class="card-head"><h2>Payments</h2><span id="pay-sum" class="muted"></span></div>
+          <div class="filters"><label>Player <select id="pay-player"></select></label><label>Kind <select id="pay-kind"></select></label></div>
+          <h3 id="pay-matrix-head">Who paid whom</h3>
+          <div id="pay-matrix" class="table-wrap"></div>
+          <h3>Every payment, newest first</h3>
+          <div id="pay-table" class="table-wrap"></div>
+          <div class="actions"><button id="pay-more" class="btn small hidden" type="button">Show more</button></div>
+          <p class="muted">Every sum that has changed hands up to the move shown: rent and every other payment between the players, and everything paid to the bank or by it, from passing GO to the buildings it buys back from a bankrupt. A player's cash is always where they started plus what they received less what they paid here.</p>
+        </div>
+        <div class="card ledger-card">
+          <div class="card-head"><h2>Trades and offers</h2><span id="trade-sum" class="muted"></span></div>
+          <div class="filters"><label>Player <select id="trade-player"></select></label><label>Outcome <select id="trade-outcome"></select></label></div>
+          <div id="trade-table" class="table-wrap"></div>
+          <div class="actions"><button id="trade-more" class="btn small hidden" type="button">Show more</button></div>
+          <p class="muted">Every trade offered, newest first: what was offered for what, each counter-offer and answer with the reason given, and how it ended, with the properties and money that changed hands when a deal was done. An offer the rules refused, such as a property that was not the offerer's to give, is kept too.</p>
+        </div>
+        <div class="card ledger-card">
+          <div class="card-head"><h2>Properties</h2><span id="prop-sum" class="muted"></span></div>
+          <div id="prop-table" class="table-wrap"></div>
+          <p class="muted">Every property up to the move shown: who holds it, how often a token has landed on it and the rent it has brought in, what it first fetched from the bank, what its buildings cost, and how often it was mortgaged and traded. Click a heading to sort by it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-games" class="panel">
+      <div class="card">
+        <div class="card-head"><h2>Every game</h2><span id="games-count" class="muted"></span></div>
+        <div id="games-table" class="table-wrap"></div>
+        <div class="actions"><button id="games-more" class="btn hidden">Show more</button></div>
+      </div>
+    </section>
+
+    <section id="view-stats" class="panel">
+      <div id="stats"></div>
+    </section>
+
+    <section id="view-models" class="panel">
+      <div id="models"></div>
+    </section>
+
+    <section id="view-about" class="panel">
+      <div class="card about">
+        <h2>Eight models, one table</h2>
+        <p>Every seat at this Monopoly table is an AI model playing through its own API, up to eight of them drawn at random for every game from a pool that so far holds Claude, Gemini, ChatGPT, Grok, Kimi, MiMo, Qwen, DeepSeek and Nemotron, never the same model twice. The games are run from the owner's machine with the owner's keys and streamed here move by move; nothing you do on this page spends anything.</p>
+        <p><b>Live</b> shows the game being played now, or the latest one when the table is quiet. <b>Games</b> lists every game kept, and each opens with a replay: step through it event by event, play it at any speed, or jump to the end. <b>Monopoly stats</b> is the board across all games: which squares get landed on, which earn the rent, how the dice fall. <b>Model stats</b> is each model's record: wins, net worth, bankruptcies, trades, rent, and how it behaved on the API.</p>
+        <p>Every player is identified by its provider, the exact model id and the effort setting it played with, and by the model id the API itself reported back, so results stay attributable as models change. Every game also says what it cost: each seat's model by name, the API that served it, and the US dollars its calls came to, as the API reported them (OpenRouter, Perplexity) or as the tokens cost at the model's list price on the day; the model statistics give each model's cost a game. Under each game, "What happened" carries the narrator's match report when one was written, a transcript for feeding to any AI, and the full log; under it are the game's ledgers: every payment between the players and with the bank, every trade offered with its counter-offers and answers, and every property's landings, rent and history.</p>
+        <p>The rules are the London edition's, with sealed-bid auctions for declined properties, the even-build rule, mortgages, trades with counter-offers and table talk. A game runs until one player is left, unless a round limit was set.</p>
+        <p class="muted">Open data: <code>/api/games</code>, <code>/api/games/&lt;id&gt;/events</code>, <code>/api/games/&lt;id&gt;/export</code>, <code>/api/stats/monopoly</code>, <code>/api/stats/models</code>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="muted">Monopoly is a trademark of Hasbro. This is an unaffiliated simulation for watching AI models play.</footer>
+
+  <script type="module" src="/assets/app/viewer.js"></script>
+</body>
+</html>
