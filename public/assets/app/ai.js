@@ -182,12 +182,15 @@ export class AIDecider {
       rec.response = out.text;
       const parsed = parseJsonReply(out.text);
       rec.parsed = parsed;
-      if (!parsed) {
-        rec.error = 'unparseable response';
+      // An empty object is no answer: it would otherwise pass as "nothing to do" before a roll, and hide a seat that
+      // never really plays (as Perplexity's JSON mode once made GPT, Grok and Kimi answer "{}" to everything).
+      const empty = parsed && typeof parsed === 'object' && !Object.keys(parsed).length;
+      if (!parsed || empty) {
+        rec.error = empty ? 'empty reply' : 'unparseable response';
         rec.fallback = true;
         game.llmCalls.push(rec); game.onLlm(rec, game);
         game.log('ai_fallback', { player: p.id, decision: type, reason: rec.error });
-        return { ...heuristicDecide(game, p, type, ctx), __source: 'heuristic-fallback', reason: 'fallback: unparseable reply' };
+        return { ...heuristicDecide(game, p, type, ctx), __source: 'heuristic-fallback', reason: `fallback: ${empty ? 'empty' : 'unparseable'} reply` };
       }
       game.llmCalls.push(rec); game.onLlm(rec, game);
       return { ...parsed, __source: 'ai' };

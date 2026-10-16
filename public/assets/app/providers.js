@@ -69,10 +69,13 @@ export const PROVIDERS = {
     effortNote: 'No effort parameter.',
     keyUrl: 'https://dashboard.cohere.com/api-keys',
   },
+  // The Agent API: effort as reasoning.effort, never a preset (a preset is a whole agent, its own instructions and
+  // tools); no JSON mode (it documents none, and asked for json_object GPT, Grok and Kimi answered "{}" every time);
+  // and the reply streamed, since a call that has not answered within about a minute is closed ("other side closed").
   perplexity: {
-    label: 'Perplexity (Agent API)', kind: 'responses', base: 'https://api.perplexity.ai/v1', env: 'PERPLEXITY_API_KEY', reasoning: 'preset',
+    label: 'Perplexity (Agent API)', kind: 'responses', base: 'https://api.perplexity.ai/v1', env: 'PERPLEXITY_API_KEY', reasoning: 'effort', stream: true,
     models: ['openai/gpt-5.5', 'openai/gpt-5.6-sol', 'openai/gpt-6-luna', 'xai/grok-4.7', 'xai/grok-4.5', 'perplexity/kimi-k3', 'zai/glm-5.2', 'anthropic/claude-opus-5-5', 'google/gemini-3.1-pro-preview', 'perplexity/sonar'],
-    effortNote: 'One key for many providers: the Agent API serves OpenAI, xAI, Moonshot, Z.ai, Anthropic and Google models under provider-prefixed ids (GET /v1/models lists them). Effort maps to the preset: fast, low, medium, high or xhigh. No web search is requested, so a call costs only its tokens.',
+    effortNote: 'One key for many providers: the Agent API serves OpenAI, xAI, Moonshot, Z.ai, Anthropic and Google models under provider-prefixed ids (GET /v1/models lists them). Effort maps to reasoning.effort: minimal, low, medium, high, xhigh or max. No preset and no tools are requested, so no web search is run and a call costs only its tokens; replies are streamed, so a long think is not cut off after a minute.',
     keyUrl: 'https://www.perplexity.ai/account/api',
   },
   moonshot: {
@@ -114,9 +117,8 @@ function mapEffort(providerId, effort) {
   }
   if (p.kind === 'gemini') return effort;
   if (providerId === 'perplexity') {
-    if (effort === 'none' || effort === 'minimal') return 'fast';
-    if (effort === 'xhigh' || effort === 'max') return 'xhigh';
-    return effort; // low|medium|high
+    if (effort === 'none' || effort === 'minimal') return 'minimal';
+    return effort; // low|medium|high|xhigh|max, as reasoning.effort
   }
   if (providerId === 'openrouter') {
     if (effort === 'none') return null;
@@ -182,21 +184,104 @@ async function fetchJson(url, init, timeoutMs, signal) {
   }
 }
 
+// A streamed reply in the Responses shape (server-sent events): the text as it comes (response.output_text.delta)
+// and the whole response the last event carries (response.completed, .incomplete or .failed), which has the usage
+// and the cost. Bytes flowing keep a long think from being cut off as an idle call. An `error` event fails the
+// call; a connection cut mid-stream throws as fetch does and is tried again; a stream that ends cleanly with
+// nothing in it is answered 422, so the caller asks again without streaming. An API that answers a stream
+// request with the whole reply at once is read as fetchJson reads it.
+async function fetchSse(url, init, timeoutMs, signal) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error('timeout')), timeoutMs);
+  const onAbort = () => ctrl.abort(signal.reason || new Error('aborted'));
+  if (signal) { if (signal.aborted) onAbort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    if (!res.ok || !/text\/event-stream/i.test(res.headers.get('content-type') || '')) {
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* not JSON */ }
+      return { ok: res.ok, status: res.status, json, text, headers: res.headers };
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', deltas = '', final = null, failure = null;
+    const take = (block) => {
+      const data = block.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, '')).join('\n');
+      if (!data || data.trim() === '[DONE]') return; // a comment, a keep-alive or the end
+      let ev;
+      try { ev = JSON.parse(data); } catch { return; }
+      if (ev.type === 'response.output_text.delta' && typeof ev.delta === 'string') deltas += ev.delta;
+      else if (/^response\.(completed|incomplete|failed|done)$/.test(ev.type || '') && ev.response) final = ev.response;
+      else if (ev.type === 'error' || ev.type === 'response.error') failure = ev.error || ev;
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      for (let m = buf.match(/\r?\n\r?\n/); m; m = buf.match(/\r?\n\r?\n/)) { take(buf.slice(0, m.index)); buf = buf.slice(m.index + m[0].length); }
+    }
+    buf += dec.decode();
+    if (buf.trim()) take(buf);
+    const why = (x) => (x && (x.message || (x.error && x.error.message) || x.code)) || 'the stream reported an error';
+    if (failure && !(final && final.status !== 'failed')) {
+      const limited = /rate.?limit/i.test(`${failure.code || ''} ${why(failure)}`);
+      throw Object.assign(new ProviderError(`stream error: ${why(failure)}`, limited ? 429 : 502, failure), { retryable: true });
+    }
+    if (final && final.status === 'failed') throw Object.assign(new ProviderError(`the reply failed: ${why(final.error)}`, 502, final), { retryable: true });
+    if (final) return { ok: true, status: res.status, json: { ...final, streamedText: deltas }, text: '', headers: res.headers };
+    if (deltas) return { ok: true, status: res.status, json: { status: 'completed', output_text: deltas }, text: '', headers: res.headers };
+    return { ok: false, status: 422, json: { error: { message: 'the stream carried no reply' } }, text: '', headers: res.headers };
+  } catch (e) {
+    if (e && e.cause) e.message = netReason(e);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
+  }
+}
+
 class ProviderError extends Error {
   constructor(message, status, body) { super(message); this.status = status; this.body = body; }
 }
+// An API's refusal as an error: its status, its own message and how long it asks to be left alone (Retry-After).
+function httpError(label, r) {
+  const msg = (r.json && r.json.error && (r.json.error.message || JSON.stringify(r.json.error))) || r.text.slice(0, 300);
+  const e = new ProviderError(`${label} ${r.status}: ${msg}`, r.status, r.json);
+  e.retryAfter = r.headers && r.headers.get ? r.headers.get('retry-after') : null;
+  return e;
+}
 
-async function withRetries(fn, { retries = 2, baseDelay = 800 } = {}) {
-  let attempt = 0;
-  for (;;) {
+// When to try a call again, and how long to wait first. A rate limit (429) waits as long as the API asks
+// (Retry-After, a minute at most) or 4, 8, 16 and 32 seconds; a connection that never opened (the network dropped,
+// or answered too slowly) is tried four more times over about twenty seconds, so a short drop on the runner's
+// machine does not hand the decision to the bot; a server error, a timeout or a connection cut mid-reply is tried
+// twice more. `backoff` scales the waits (the checks run them short).
+const CONNECT_CODES = /^(ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN|UND_ERR_CONNECT_TIMEOUT)$/;
+export function connectFailed(e) {
+  const c = e && e.cause;
+  if (!c) return false;
+  const all = c.errors && c.errors.length ? c.errors : [c];
+  return all.every((x) => CONNECT_CODES.test(String((x && x.code) || '')));
+}
+function retryAfterMs(v) {
+  if (v == null || v === '') return null;
+  const s = Number(v);
+  if (Number.isFinite(s)) return Math.max(0, s * 1000);
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? Math.max(0, t - Date.now()) : null;
+}
+async function withRetries(fn, { backoff = 1 } = {}) {
+  for (let attempt = 0; ; attempt++) {
     try {
       return await fn(attempt);
     } catch (e) {
-      const retryable = e.status === 429 || e.status === 408 || e.status === 409 || (e.status >= 500 && e.status < 600) || e.message === 'timeout' || e.name === 'TypeError';
-      if (!retryable || attempt >= retries) throw e;
-      const delay = baseDelay * 2 ** attempt + Math.random() * 300;
-      await new Promise((r) => setTimeout(r, delay));
-      attempt++;
+      const retryable = e.status === 429 || e.status === 408 || e.status === 409 || (e.status >= 500 && e.status < 600) || e.message === 'timeout' || e.name === 'TypeError' || e.retryable;
+      let max = 2, delay = 800 * 2 ** attempt + Math.random() * 300;
+      if (e.status === 429) { max = 4; delay = Math.min(60000, retryAfterMs(e.retryAfter) ?? 4000 * 2 ** attempt + Math.random() * 1000); }
+      else if (connectFailed(e)) { max = 4; delay = 1500 * 2 ** attempt + Math.random() * 500; }
+      if (!retryable || attempt >= max) throw e;
+      await new Promise((r) => setTimeout(r, delay * backoff));
     }
   }
 }
@@ -264,19 +349,19 @@ async function callAnthropic(o, provider) {
   if (typeof window !== 'undefined') headers['anthropic-dangerous-direct-browser-access'] = 'true';
   const send = async (b) => {
     const r = await fetchJson(`${base}/v1/messages`, { method: 'POST', headers, body: JSON.stringify(b) }, o.timeoutMs || 60000, o.signal);
-    if (!r.ok) throw new ProviderError(`Anthropic ${r.status}: ${(r.json && r.json.error && r.json.error.message) || r.text.slice(0, 300)}`, r.status, r.json);
+    if (!r.ok) throw httpError('Anthropic', r);
     return r.json;
   };
   let json;
   let request = body;
   try {
-    json = await withRetries(() => send(body));
+    json = await withRetries(() => send(body), o);
   } catch (e) {
     if (is400(e) && (body.output_config || body.temperature != null)) {
       // Older models reject effort; retry without the optional knobs.
       const b2 = { ...body }; delete b2.output_config; delete b2.temperature;
       request = b2;
-      json = await withRetries(() => send(b2));
+      json = await withRetries(() => send(b2), o);
     } else throw e;
   }
   if (json.stop_reason === 'refusal') throw new ProviderError('Anthropic refusal', 200, json);
@@ -308,17 +393,17 @@ async function callGemini(o, provider) {
   const headers = { 'content-type': 'application/json', 'x-goog-api-key': o.apiKey };
   const send = async (b) => {
     const r = await fetchJson(url, { method: 'POST', headers, body: JSON.stringify(b) }, o.timeoutMs || 60000, o.signal);
-    if (!r.ok) throw new ProviderError(`Gemini ${r.status}: ${(r.json && r.json.error && r.json.error.message) || r.text.slice(0, 300)}`, r.status, r.json);
+    if (!r.ok) throw httpError('Gemini', r);
     return r.json;
   };
   let json; let request = body;
   try {
-    json = await withRetries(() => send(body));
+    json = await withRetries(() => send(body), o);
   } catch (e) {
     if (is400(e) && body.generationConfig.thinkingConfig) {
       const b2 = { ...body, generationConfig: { ...body.generationConfig } }; delete b2.generationConfig.thinkingConfig;
       request = b2;
-      json = await withRetries(() => send(b2));
+      json = await withRetries(() => send(b2), o);
     } else throw e;
   }
   const cand = (json.candidates || [])[0];
@@ -355,16 +440,16 @@ async function callOpenAICompat(o, provider) {
   if (o.provider === 'openrouter') { headers['HTTP-Referer'] = typeof location !== 'undefined' ? location.origin : 'https://monopoly-simulator'; headers['X-Title'] = 'Monopoly AI Simulator'; }
   const send = async (b) => {
     const r = await fetchJson(`${base}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(b) }, o.timeoutMs || 60000, o.signal);
-    if (!r.ok) throw new ProviderError(`${provider.label} ${r.status}: ${(r.json && r.json.error && (r.json.error.message || JSON.stringify(r.json.error))) || r.text.slice(0, 300)}`, r.status, r.json);
+    if (!r.ok) throw httpError(provider.label, r);
     return r.json;
   };
   let json; let request = { ...body, ...optional };
   try {
-    json = await withRetries(() => send({ ...body, ...optional }));
+    json = await withRetries(() => send({ ...body, ...optional }), o);
   } catch (e) {
     if (is400(e) && Object.keys(optional).length) {
       request = body;
-      json = await withRetries(() => send(body));
+      json = await withRetries(() => send(body), o);
     } else throw e;
   }
   const choice = (json.choices || [])[0];
@@ -385,7 +470,13 @@ async function callOpenAICompat(o, provider) {
 }
 
 // The OpenAI Responses shape, which Perplexity's Agent API speaks: the system
-// text and the user turn go in `input`, the reply comes back as output items.
+// text and the user turn go in `input`, the reply comes back as output items,
+// streamed when the provider says so (`stream`). Asked for JSON only where the
+// API has a JSON mode (`jsonMode`); otherwise the prompt asks for it and
+// parseJsonReply finds it. After a 400 the call is sent again without its
+// optional knobs, then without streaming, then plain, and the shape that worked
+// is used first from then on for that model.
+const shapes = new Map();
 async function callResponses(o, provider) {
   const base = (o.baseUrl || provider.base).replace(/\/$/, '');
   const eff = mapEffort(o.provider, o.effort);
@@ -398,26 +489,36 @@ async function callResponses(o, provider) {
     max_output_tokens: (o.maxTokens || 1500) + headroom(o.effort),
   };
   const optional = {};
-  if (eff) { if (provider.reasoning === 'preset') optional.preset = eff; else optional.reasoning = { effort: eff }; }
+  if (eff) optional.reasoning = { effort: eff };
   if (o.temperature != null) optional.temperature = o.temperature;
-  if (!o.plain) optional.text = { format: { type: 'json_object' } };
+  if (!o.plain && provider.jsonMode) optional.text = { format: { type: 'json_object' } };
+  const ladder = [];
+  const rung = (b) => { if (!ladder.some((x) => JSON.stringify(x) === JSON.stringify(b))) ladder.push(b); };
+  if (provider.stream) { rung({ ...body, ...optional, stream: true }); rung({ ...body, stream: true }); }
+  rung({ ...body, ...optional });
+  rung(body);
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey || 'none'}` };
   const send = async (b) => {
-    const r = await fetchJson(`${base}/responses`, { method: 'POST', headers, body: JSON.stringify(b) }, o.timeoutMs || 60000, o.signal);
-    if (!r.ok) throw new ProviderError(`${provider.label} ${r.status}: ${(r.json && r.json.error && (r.json.error.message || JSON.stringify(r.json.error))) || r.text.slice(0, 300)}`, r.status, r.json);
+    const init = { method: 'POST', headers: b.stream ? { ...headers, accept: 'text/event-stream' } : headers, body: JSON.stringify(b) };
+    const r = b.stream ? await fetchSse(`${base}/responses`, init, o.timeoutMs || 60000, o.signal) : await fetchJson(`${base}/responses`, init, o.timeoutMs || 60000, o.signal);
+    if (!r.ok) throw httpError(provider.label, r);
     return r.json;
   };
-  let json; let request = { ...body, ...optional };
-  try {
-    json = await withRetries(() => send(request));
-  } catch (e) {
-    if (is400(e) && Object.keys(optional).length) {
-      request = body;
-      json = await withRetries(() => send(body));
-    } else throw e;
+  const key = `${o.provider}|${base}|${o.model}`;
+  let json, request;
+  for (let k = Math.min(shapes.get(key) || 0, ladder.length - 1); ; k++) {
+    request = ladder[k];
+    try {
+      json = await withRetries(() => send(request), o);
+      shapes.set(key, k);
+      break;
+    } catch (e) {
+      if (!is400(e) || k === ladder.length - 1) throw e;
+    }
   }
   let text = typeof json.output_text === 'string' ? json.output_text : '';
   if (!text) for (const item of json.output || []) if (item.type === 'message') for (const c of item.content || []) if ((c.type === 'output_text' || c.type === 'text') && c.text) text += c.text;
+  if (!text && json.streamedText) text = json.streamedText;
   const u = json.usage || {};
   return {
     text, raw: json, request, servedModel: json.model || null,
