@@ -135,7 +135,18 @@ table.models td.mk { font-size: 12px; }
 .cell.side-top { flex-direction: column; }
 .cell.side-left { flex-direction: row; --avail: calc(83cqw - 8px); }
 .cell.side-right { flex-direction: row; --avail: calc(83cqw - 8px); }
-.cell .band { flex: 0 0 17%; background: var(--gc, transparent); border: 0 solid var(--ink); }
+.cell .band { flex: 0 0 17%; background: var(--gc, transparent); border: 0 solid var(--ink); display: flex; align-items: center; justify-content: center; container-type: size; min-width: 0; min-height: 0; }
+/* the buildings on the band, upright on every side and side by side along it: up to three houses, a hotel and a
+   skyscraper at the band's whole thickness (cqmin) and a little proud of it, four houses as large as the property's
+   width lets them be, a hotel on a side column as wide as the band; their white outline (drawn in the icon) may spill past it */
+.cell .band .blds { display: flex; align-items: center; justify-content: center; gap: 6cqmin; }
+.cell.side-left .band .blds, .cell.side-right .band .blds { flex-direction: column; }
+.cell .band .blds svg { display: block; flex: none; overflow: visible; height: 100cqmin; width: auto; filter: drop-shadow(0 .6px .8px rgba(0,0,0,.45)); }
+.cell .band .blds.n4 { gap: 4cqmin; }
+.cell .band .blds.n4 svg { height: 84cqmin; }
+.cell .band .blds svg.hotel { height: 104cqmin; }
+.cell.side-left .band .blds svg.hotel, .cell.side-right .band .blds svg.hotel { height: auto; width: 90cqmin; }
+.cell .band .blds svg.sky { height: 106cqmin; }
 .cell.side-bottom .band { border-bottom-width: 1px; }
 .cell.side-top .band { border-top-width: 1px; }
 .cell.side-left .band { border-left-width: 1px; }
@@ -153,7 +164,7 @@ table.models td.mk { font-size: 12px; }
 .cell .name { flex-shrink: 0; font-weight: 600; font-size: var(--name, max(5px, min(1em, calc(var(--avail) / var(--w, 6))))); overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; text-transform: uppercase; letter-spacing: .01em; }
 .cell .price { flex-shrink: 0; color: var(--board-muted); font-size: calc(var(--name, 1em) * .95); margin-top: auto; }
 .cell.side-top .price { margin-top: 0; margin-bottom: auto; }
-.cell .bld { font-size: calc(var(--name, 1em) * .9); color: var(--accent); font-weight: 700; }
+.cell .bld { font-size: var(--name, 1em); color: var(--accent); font-weight: 800; letter-spacing: .03em; }
 .cell .ico { flex: 0 1 auto; height: calc(var(--name, 1em) * 3.1); min-height: 0; width: auto; max-width: 92%; margin: auto 0; }
 .cell .qm { font-size: calc(var(--name, 1em) * 3.6); line-height: 1; font-weight: 800; color: var(--accent); -webkit-text-stroke: .03em var(--board-ink); paint-order: stroke fill; margin: auto 0; }
 .cell.pic .price { margin: 0; }
@@ -181,7 +192,9 @@ table.models td.mk { font-size: 12px; }
 body.board-full { overflow: hidden; }
 .tok { width: var(--tok, 14px); height: var(--tok, 14px); border-radius: 50%; color: #fff; font-size: calc(var(--tok, 14px) * .57); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.8); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
 /* a model's token: its maker's logo on white, in a ring of the player's colour */
-.tok.logo { background: var(--logo-bg, #fff) var(--logo) center / 70% no-repeat; border: 0; box-shadow: 0 0 0 2px var(--pc), 0 0 0 3px rgba(0,0,0,.45); margin: 1px; }
+/* a model's token: its maker's whole logo, cut out like a sticker with a white outline and lifted by a shadow */
+.tok.logo { --o: max(1px, calc(var(--tok, 14px) * .08)); width: calc(var(--tok, 14px) * 1.2); height: calc(var(--tok, 14px) * 1.2); background: var(--logo) center / contain no-repeat; border: 0; border-radius: 0; box-shadow: none; margin: 1px;
+  filter: drop-shadow(var(--o) 0 0 #fff) drop-shadow(calc(var(--o) * -1) 0 0 #fff) drop-shadow(0 var(--o) 0 #fff) drop-shadow(0 calc(var(--o) * -1) 0 #fff) drop-shadow(0 1px 1.2px rgba(0,0,0,.5)); }
 @media (max-width: 1000px) { .play-grid { grid-template-columns: 1fr; } .board-wrap { max-width: 100%; } }
 @media (max-width: 600px) { .tok.logo { margin: 0 -1px; } .cell .txt, .cell.side-top .txt, .cell.side-bottom .txt, .cell.side-left .txt, .cell.side-right .txt { padding: 1px 2px; } .cell .price, .cell .bld { display: none; } .cell .ico { height: calc(var(--name, 1em) * 2.6); } .cell .qm { font-size: calc(var(--name, 1em) * 3); } .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 

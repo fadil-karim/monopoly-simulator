@@ -393,15 +393,23 @@ const wordWidth = (() => {
   return f;
 })();
 const longestWord = (name, weight = 600, spacing = 0.01) => Math.max(0.5, ...name.split(/\s+/).filter(Boolean).map((w) => wordWidth(w, weight, spacing))).toFixed(2);
-// A player's token: the logo of its model's maker in a ring of the player's colour, or, for the rule-based bot and a
-// model without a logo here, the player's initial on the colour. A logo drawn for a dark tile (Kimi's white K) gets one.
-const LOGO_TILE = { kimi: '#000' };
+// A player's token: its model's maker's whole logo, cut out like a sticker (the stylesheet's white outline), or, for
+// the rule-based bot and a model without a logo here, the player's initial on their colour.
 function tokenHtml(p) {
-  const meta = p.meta || {}, colour = esc(meta.colour || '#888');
+  const meta = p.meta || {};
   const logo = modelLogo(meta.provider, meta.model);
-  return logo ? `<span class="tok logo" style="--pc:${colour};--logo:url(/assets/logos/${logo}.svg)${LOGO_TILE[logo] ? `;--logo-bg:${LOGO_TILE[logo]}` : ''}" title="${esc(p.name)}"></span>`
-    : `<span class="tok" style="background:${colour}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`;
+  return logo ? `<span class="tok logo" style="--logo:url(/assets/logos/${logo}.svg)" title="${esc(p.name)}"></span>`
+    : `<span class="tok" style="background:${esc(meta.colour || '#888')}" title="${esc(p.name)}">${esc(p.name[0] || '?')}</span>`;
 }
+// The buildings stand on the property's colour band, as on the printed board: a green house each, a red hotel, the Mega
+// board's grey skyscraper, each filling its box and outlined in white like a sticker so it stands out on any band, and
+// as large as the band allows (the band is a size container; the stylesheet sizes them).
+const building = (cls, box, d, fill, extra = '') => `<svg class="${cls}" viewBox="${box}" aria-hidden="true"><path d="${d}" fill="#fff" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><path d="${d}" fill="${fill}" stroke="#111" stroke-width=".8" stroke-linejoin="round"/>${extra}</svg>`;
+const BUILDINGS = {
+  house: building('house', '0 0 10 10', 'M5 0 10 4.2V10H0V4.2z', '#1fa045'),
+  hotel: building('hotel', '0 0 14 10', 'M7 0 14 3.4V10H0V3.4z', '#e0252c'),
+  sky: building('sky', '0 0 8 14', 'M.4 14V2.8L4 0l3.6 2.8V14z', '#8a9099', '<path d="M2.2 4.4h1.3v1.3H2.2zM4.5 4.4h1.3v1.3H4.5zM2.2 7.2h1.3v1.3H2.2zM4.5 7.2h1.3v1.3H4.5zM2.2 10h1.3v1.3H2.2zM4.5 10h1.3v1.3H4.5z" fill="#fff"/>'),
+};
 function renderBoard(game) {
   const board = $('#board');
   const per = game.perSide, n = per + 1;
@@ -420,9 +428,7 @@ function renderBoard(game) {
     const pr = game.props[s.i];
     const corner = s.i % per === 0;
     const owner = pr && pr.owner ? colourOf[pr.owner] : null;
-    let bld = '';
-    if (pr && pr.level) bld = pr.level === SKYSCRAPER ? 'SKY' : pr.level === HOTEL ? 'HOTEL' : '▲'.repeat(pr.level);
-    if (pr && pr.depot) bld += ' DEPOT';
+    const blds = pr && pr.level ? (pr.level === SKYSCRAPER ? BUILDINGS.sky : pr.level === HOTEL ? BUILDINGS.hotel : BUILDINGS.house.repeat(pr.level)) : '';
     const toks = (tokensAt[s.i] || []).map(tokenHtml).join('');
     const side = row === n ? 'bottom' : col === 1 ? 'left' : row === 1 ? 'top' : 'right';
     // the stylesheet sizes a label from its square and its longest word (--w letters) so the word stays whole; a one-word corner (GO) runs larger
@@ -433,10 +439,10 @@ function renderBoard(game) {
     const w = longestWord(s.name, s.i === 0 ? 800 : corner ? 700 : 600, s.i === 0 ? 0.04 : 0.01);
     // the band sits at the inner edge: before the text on the bottom and right sides, after it on the top and left; in a top
     // square the text runs price, picture, name so the name meets the band and the price the outer edge, as on the others
-    const band = s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}"></div>` : '';
-    const parts = [corpic, `<div class="name">${esc(s.name)}</div>`, icon, s.price ? `<div class="price">${esc(M(s.price))}</div>` : '', bld ? `<div class="bld">${bld}</div>` : '', s.i === 0 ? GO_ARROW : ''];
+    const band = s.group && GROUPS[s.group] && s.type === 'street' ? `<div class="band" style="--gc:${GROUPS[s.group].colour}">${blds ? `<span class="blds n${pr.level}">${blds}</span>` : ''}</div>` : '';
+    const parts = [corpic, `<div class="name">${esc(s.name)}</div>`, icon, s.price ? `<div class="price">${esc(M(s.price))}</div>` : '', pr && pr.depot ? '<div class="bld">DEPOT</div>' : '', s.i === 0 ? GO_ARROW : ''];
     const txt = `<div class="txt">${(side === 'top' && !corner ? parts.reverse() : parts).join('')}</div>`;
-    html += `<div class="${cls}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};--w:${w};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}">
+    html += `<div class="${cls}" data-i="${s.i}" style="grid-row:${row};grid-column:${col};--w:${w};${owner ? `--owner:${esc(owner)}` : ''}" title="${esc(s.name)}${s.price ? ' ' + esc(M(s.price)) : ''}${pr && pr.owner ? ' · ' + esc((game.player(pr.owner) || { name: pr.owner }).name) : ''}${pr && pr.level ? ' · ' + esc(levelName(pr.level)) : ''}">
       ${side === 'bottom' || side === 'right' ? band : ''}
       ${owner ? '<div class="own"></div>' : ''}
       <div class="tokens">${toks}</div>

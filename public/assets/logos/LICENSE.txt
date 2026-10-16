@@ -1,7 +1,7 @@
 The logos in this folder are the trademarks of their owners (Anthropic, Google, OpenAI, xAI, Moonshot AI,
 Xiaomi, Alibaba Cloud, DeepSeek, NVIDIA, Zhipu AI and Mistral AI), used here only to show which model holds
 each token on the board. Xiaomi's, for MiMo, is the drawing from Simple Icons (https://simpleicons.org), given to
-the public domain under CC0 1.0 and coloured here in Xiaomi's orange. The others come from LobeHub's icon set
+the public domain under CC0 1.0 and coloured here in Xiaomi's orange. Kimi's is set on the black tile its own icon has. The others come from LobeHub's icon set
 (https://github.com/lobehub/lobe-icons), published under this licence:
 
 MIT License
