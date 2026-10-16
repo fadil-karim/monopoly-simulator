@@ -882,7 +882,7 @@ export class Game {
         const c = this.normaliseOffer(receiver, sender, { give: r.counter.give, get: r.counter.get, message: r.counter.message });
         if (c.error) { this.log('trade_response', { ...offer, accept: false, source: r.__source, reason: `counter invalid (${c.error}); ${r.reason || ''}` }); return; }
         offer = c.offer;
-        this.log('trade_counter', { ...offer, round: round + 1, source: r.__source, reason: r.reason });
+        this.log('trade_counter', { ...offer, negotiationRound: round + 1, source: r.__source, reason: r.reason }); // round stays the game's
         continue;
       }
       this.log('trade_response', { ...offer, accept: false, source: r.__source, reason: r.reason });

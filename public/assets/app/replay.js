@@ -74,7 +74,8 @@ export class ReplayGame {
   }
   apply(e) {
     this.events.push(e);
-    if (e.round != null) this.round = e.round;
+    // a counter-offer logged before v1.19 carried the negotiation's step in place of the game's round
+    if (e.round != null && e.type !== 'trade_counter') this.round = e.round;
     if (e.turn != null) this.turn = e.turn;
     const P = (id) => this.player(id);
     const PR = (i) => this.props[i];

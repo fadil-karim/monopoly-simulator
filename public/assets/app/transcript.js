@@ -73,9 +73,11 @@ export function fmtEvent(e, game) {
 // Events whose actor is named inside the line already.
 const SELF_NAMED = new Set(['payment', 'bankrupt', 'auction_won', 'trade_proposed', 'trade_response', 'trade_counter', 'trade_lapsed', 'trade_completed', 'mr_monopoly', 'turn_start', 'game_start', 'game_end', 'engine_error']);
 
-export function eventLine(e, game) {
+// `round` is the game's round at the event, for a counter-offer logged before v1.19, which carried the negotiation's
+// step in its place.
+export function eventLine(e, game, round) {
   const who = e.player && !SELF_NAMED.has(e.type) ? nm(game, e.player) + ' ' : '';
-  return `[r${e.round}] ${who}${fmtEvent(e, game)}`;
+  return `[r${e.type === 'trade_counter' && e.negotiationRound == null && round != null ? round : e.round}] ${who}${fmtEvent(e, game)}`;
 }
 
 const NOISE = new Set(['roll', 'move', 'turn_start', 'buy_decision', 'rent_due', 'auction_start', 'auction_bids', 'raise_cash', 'jail_stay', 'illegal_action', 'rent_skipped', 'bus_ticket_none']);
@@ -92,9 +94,11 @@ export function transcript(game, { compact = false, maxChars = 0 } = {}) {
   }
   head.push('');
   const lines = [];
+  let round = 0;
   for (const e of game.events) {
+    if (e.type !== 'trade_counter' && e.round != null) round = e.round;
     if (compact && NOISE.has(e.type)) continue;
-    lines.push(eventLine(e, game));
+    lines.push(eventLine(e, game, round));
   }
   const tail = [];
   if (game.result) {
