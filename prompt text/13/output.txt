@@ -1,0 +1,22 @@
+MiMo and Qwen are in. The default table now seats MiMo-V2.6-Pro and Qwen3.8 Max through OpenRouter, in place of the DeepSeek Flash build and GLM-5.2, so the Chinese seats are the three ranked highest right now: Kimi K3 on Perplexity, MiMo and Qwen on OpenRouter. Everything else stays as it was: Claude Opus 5.5 at xhigh and Gemini 4 Argon direct, GPT-6.1 Sol, Grok 4.7 and Nemotron 3 Ultra through Perplexity, random seating every game.
+
+Add the key to `runner/.env`:
+
+```
+OPENROUTER_API_KEY=...
+```
+
+and check the two ids once before a real game:
+
+```
+node runner/run.mjs --list-models openrouter
+```
+
+If you would rather have DeepSeek V4 Pro at the table, it is on OpenRouter as `deepseek/deepseek-v4-pro`; say which seat it should take.
+
+Verified before the push: the config loads and a short dry run seats all eight in a shuffled order, naming both OpenRouter seats; the simulator invariants, the replay check, the deploy dry run, the page rendered, and the headless viewer suite against a local Worker. Pushed to the branch and fast-forwarded to main.
+
+```
+Tag: v1.12  —  Title: MiMo and Qwen join through OpenRouter
+Description: The two Chinese models Perplexity could not serve now have their seats: MiMo-V2.6-Pro and Qwen3.8 Max, the two ranked highest beside Kimi K3, play through OpenRouter on a second key, taking the places of the DeepSeek Flash build and GLM-5.2.
+```

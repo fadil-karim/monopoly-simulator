@@ -63,17 +63,20 @@ program the owner runs wherever the keys live.
 
 The default table (`runner/config.default.json`) seats Claude Opus 5.5 at
 xhigh (Anthropic), Gemini 4 Argon (Google), GPT-6.1 Sol (OpenAI), Grok 4.7
-(xAI), Kimi K3 (Moonshot), DeepSeek V4 (DeepSeek), GLM-5.2 (Z.ai) and
-Nemotron 3 Ultra (NVIDIA), in a random order each game. Claude and Gemini
-are called directly; the other six go through Perplexity's Agent API with
-one `PERPLEXITY_API_KEY`, under the provider-prefixed ids its changelog
-lists (`openai/gpt-6.1-sol`, `xai/grok-4.7`, `perplexity/kimi-k3`,
-`perplexity/deepseek-v4-flash-0731`, `zai/glm-5.2`,
-`perplexity/nemotron-3-ultra-550b-a55b`; `node runner/run.mjs
---list-models perplexity` prints the current catalogue for your key, the
-place to check them). A seat whose call fails plays that decision by the
-rules-based bot and the call is logged as a fallback. No web search is
-requested from Perplexity, so a call costs only its tokens.
+(xAI), Kimi K3 (Moonshot), MiMo-V2.6-Pro (Xiaomi), Qwen3.8 Max (Alibaba)
+and Nemotron 3 Ultra (NVIDIA), in a random order each game. Claude and
+Gemini are called directly; GPT-6.1 Sol, Grok, Kimi and Nemotron go
+through Perplexity's Agent API with one `PERPLEXITY_API_KEY`, under the
+provider-prefixed ids its changelog lists (`openai/gpt-6.1-sol`,
+`xai/grok-4.7`, `perplexity/kimi-k3`,
+`perplexity/nemotron-3-ultra-550b-a55b`); MiMo and Qwen, which Perplexity
+does not serve, go through OpenRouter with one `OPENROUTER_API_KEY`
+(`xiaomi/mimo-v2.6-pro`, `qwen/qwen3.8-max`). `node runner/run.mjs
+--list-models perplexity` and `--list-models openrouter` print the
+catalogues for your keys, the place to check the ids. A seat whose call
+fails plays that decision by the rules-based bot and the call is logged as
+a fallback. No web search is requested from Perplexity, so a call costs
+only its tokens.
 
 Each player is a provider, a model id, an effort setting and optional
 instructions; the runner also records the model id each API reports back on
@@ -139,15 +142,17 @@ RUNNER_TOKEN=the same string as the secret
 ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 PERPLEXITY_API_KEY=...
+OPENROUTER_API_KEY=...
 ENV
-node runner/run.mjs --list-models perplexity   # once: check the six Perplexity ids against your key
+node runner/run.mjs --list-models perplexity   # once: check the Perplexity ids against your key
+node runner/run.mjs --list-models openrouter   # and the OpenRouter ones
 node runner/run.mjs --loop
 ```
 
 That plays the default table, `runner/config.default.json`: the eight seats
 in a random order each game, Claude on the Anthropic API, Gemini on
-Google's, and ChatGPT, Grok, Kimi, DeepSeek, GLM and Nemotron through
-Perplexity's Agent API with the one key. To change players, models,
+Google's, ChatGPT, Grok, Kimi and Nemotron through Perplexity's Agent API
+with one key, and MiMo and Qwen through OpenRouter with another. To change players, models,
 efforts or the engine settings, copy it to `runner/config.json` (ignored
 by git) and edit that; the runner prefers it when it exists.
 
