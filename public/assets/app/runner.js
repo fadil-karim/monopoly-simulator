@@ -28,6 +28,8 @@ export class Runner {
     this.results = [];
   }
   stop() { this.abort.abort(new Error('stopped by user')); for (const g of this.games) g.stop(); }
+  // No new game starts; the ones in play are played to the end.
+  finishUp() { this.ending = true; }
 
   async run() {
     const s = this.setup;
@@ -42,7 +44,7 @@ export class Runner {
     let next = 0;
     const startedAt = Date.now();
     const worker = async () => {
-      while (next < total && !this.abort.signal.aborted) {
+      while (next < total && !this.abort.signal.aborted && !this.ending) {
         const n = next++;
         const seed = s.seed != null && s.seed !== '' ? Number(s.seed) + n : undefined;
         const seated = pickSeats(s.players, Number(s.seats) || s.players.length, seed != null ? seed * 7919 + 17 : undefined);
@@ -71,23 +73,3 @@ export class Runner {
   }
 }
 
-// Serialise a finished game into a self-contained log record.
-export function gameRecord(game, setup) {
-  return {
-    version: 1,
-    id: game.id,
-    batchId: setup.batchId,
-    createdAt: new Date(game.startedAt).toISOString(),
-    edition: game.edition,
-    seed: game.seed,
-    config: game.config,
-    universal: setup.universal || '',
-    players: game.players.map((p) => ({ id: p.id, name: p.name, provider: p.meta.provider, model: p.meta.model, effort: p.meta.effort, instructions: p.meta.instructions, colour: p.meta.colour, stats: p.stats, finalCash: p.cash, finalNetWorth: p.bankrupt ? 0 : game.netWorth(p), bankrupt: p.bankrupt, bankruptRound: p.bankruptRound })),
-    result: game.result,
-    snapshots: game.snapshots,
-    finalProperties: game.props,
-    chat: game.chat,
-    events: game.events,
-    llmCalls: game.llmCalls,
-  };
-}

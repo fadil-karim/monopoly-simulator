@@ -1,3 +1,4 @@
 out/
 .env
 config.json
+games/
