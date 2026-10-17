@@ -1,8 +1,11 @@
 # The simulator, apart from the site.
 #
 # On this machine, with the dashboard:   docker compose up -d --build     then open http://127.0.0.1:8788/
+#                                        (the controls, Run 8 CPU players, and the games live on the site's own pages)
 # On a cloud instance, headless:         cp simulator.env.example simulator.env, fill it in, then
 #                                        MONOPOLY_MODE=play docker compose up -d --build
+#                                        (or put MONOPOLY_MODE=play in a .env file beside this one, once)
+# The eight CPU players, headless:       MONOPOLY_MODE=cpu docker compose up -d --build
 # A one-off task:                        docker compose run --rm simulator publish   (or probe, store, import-site)
 #
 # The games, the table and the keys the dashboard remembers live in the volume monopoly-data, which a rebuild, an

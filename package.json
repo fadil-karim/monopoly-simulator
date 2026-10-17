@@ -14,7 +14,8 @@
     "check:replay": "node scripts/check-replay.mjs 30 standard && node scripts/check-replay.mjs 30 mega",
     "check:ledger": "node scripts/check-ledger.mjs 30 standard && node scripts/check-ledger.mjs 30 mega",
     "runner": "node runner/run.mjs",
-    "dashboard": "node runner/dashboard.mjs"
+    "dashboard": "node runner/dashboard.mjs",
+    "cpu": "node runner/run.mjs --config runner/config.cpu.json --dry --loop"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

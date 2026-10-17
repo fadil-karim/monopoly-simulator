@@ -1,0 +1,21 @@
+{
+  "site": "",
+  "note": "The CPU table: eight rule-based players, every one seated every game in a random order. No keys and no model calls; run with --dry (the dashboard's Run 8 CPU players and npm run cpu do), the games stay in this machine's store and show on the dashboard's own copy of the site. Each turn waits turnDelayMs so a game can be watched (pass --delay 0 to play at full speed), and a game stops after maxRounds, the richest winning, since eight rule-based players seldom bankrupt one another and would otherwise play to the engine's limit of a thousand rounds.",
+  "seats": 8,
+  "players": [
+    { "id": "ada",     "name": "Ada",     "provider": "heuristic", "model": "rules-v1", "colour": "#d97757" },
+    { "id": "babbage", "name": "Babbage", "provider": "heuristic", "model": "rules-v1", "colour": "#10a37f" },
+    { "id": "curie",   "name": "Curie",   "provider": "heuristic", "model": "rules-v1", "colour": "#4285f4" },
+    { "id": "dirac",   "name": "Dirac",   "provider": "heuristic", "model": "rules-v1", "colour": "#111111" },
+    { "id": "euler",   "name": "Euler",   "provider": "heuristic", "model": "rules-v1", "colour": "#7c3aed" },
+    { "id": "fermat",  "name": "Fermat",  "provider": "heuristic", "model": "rules-v1", "colour": "#ff6900" },
+    { "id": "goedel",  "name": "Gödel",   "provider": "heuristic", "model": "rules-v1", "colour": "#0ea5e9" },
+    { "id": "hopper",  "name": "Hopper",  "provider": "heuristic", "model": "rules-v1", "colour": "#76b900" }
+  ],
+  "universal": "",
+  "config": { "edition": "standard", "maxRounds": 150, "auctionOnDecline": true, "bankAuction": true, "shuffleOrder": true, "freeParkingJackpot": false, "turnDelayMs": 300 },
+  "games": 1,
+  "concurrency": 1,
+  "seed": null,
+  "pauseBetweenGamesMs": 10000
+}
