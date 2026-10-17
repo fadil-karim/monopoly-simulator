@@ -22,8 +22,12 @@ doesn't. Everything here is read from the code (`public/assets/app/engine.js`, `
 - **No memory.** Every request is a new conversation. All a model knows of the game so far is the state it is
   shown and the table talk.
 - **One JSON object back:** the decision, an optional line to the table (`say`), an optional private word
-  (`tell`) and a short `reason`. A call that fails, a reply that is not JSON or is empty, or an answer that breaks
-  the rules is played by the rule-based bot for that one decision.
+  (`tell`) and a short `reason`.
+- **No answer, no choice.** A call that fails, a reply that is not JSON or is empty, or an answer that breaks the
+  rules forfeits that one choice: the engine takes the answer that does nothing (no purchase, a bid of nothing, a
+  trade offer rejected), logs the forfeit with its reason, and the turn goes on with its obligations, rent, tax,
+  cards and debts. Nobody plays in the model's place; before v2.0 the rule-based bot did.
+- **Every turn is timed,** from the question before the roll to the end of the turn, and logged with the game.
 - **In your game:** 158 calls in the first 8 rounds (57 turns), about 2.8 a turn: 57 pre-rolls (one every turn),
   40 replies to table talk, 24 trade responses, 22 buys and 15 bids.
 
@@ -68,6 +72,10 @@ flowchart TD
 Any of those answers can also speak to the table, and a player spoken to is asked to reply (see
 [Talk and replies](#talk-and-replies)).
 
+Every turn is timed, from the moment the pre-roll question is asked to the end of the turn, the answers it waits on
+from the other players included, and logged as a `turn_end` event with its milliseconds: the site shows each
+player's average turn on its card and each model's in the model statistics.
+
 ### Every question a model can be asked
 
 | Question | When | Who is asked | What it is told it can do | It answers |
@@ -109,12 +117,17 @@ sequenceDiagram
         Note over A,B: back and forth until one side accepts or rejects, or 8 counter-offers pass and it lapses
     else rejects
         B->>E: {"accept": false}
+    else gives no valid answer
+        B-->>E: an error, no JSON, an empty {} or an answer of the wrong shape
+        E->>E: logs the forfeit, then the offer as rejected by default, with the reason
     end
 ```
 
 A trade can only be proposed in the proposer's own pre-roll, ten at most a turn, each settled before the next.
 Only properties without buildings can change hands, with cash either way. A counter-offer that is not legal (a
-property the player does not own, a house on it, cash it has not got) ends the negotiation.
+property the player does not own, a house on it, cash it has not got) ends the negotiation. A player who gives no
+valid answer to an offer rejects it by default: the log has the forfeit, with what went wrong, and the rejection,
+whose reason reads "no valid answer (…)", and the trades ledger under the game shows it so.
 
 ### Talk and replies
 
@@ -171,11 +184,12 @@ flowchart TB
 
 - **The limits.** An answer may run to 4,000 tokens plus room to think by effort (16,000 more at high, 32,000 at
   xhigh), and a call may take up to ten minutes. Every seat in your game played at high effort.
-- **Where the prompts are kept.** Every call's full prompt is in the copy of each game on the runner's machine,
-  `runner/out/<game>.json`, under `llmCalls` (`system` and `user`). The site keeps every call's reply, parsed
-  decision, tokens, time and cost, and the prompts too only when `"logPrompts": true` or `--log-prompts`.
+- **Where the prompts are kept.** Every call's full prompt is in the simulator's store, one call a line in
+  `games/<game>/calls.jsonl` in its data folder (gzipped once the game is over), with `system` and `user`. The site
+  keeps every call's reply, parsed decision, tokens, time and cost, and the prompts too only when
+  `"logPrompts": true` or `--log-prompts`.
 
-## 3. What a model must answer, and when the bot steps in
+## 3. What a model must answer, and what a bad answer costs
 
 | Question | The answer | From your game |
 | --- | --- | --- |
@@ -191,34 +205,53 @@ sequenceDiagram
     participant E as Engine
     participant D as AI decider
     participant API as The model's API
-    participant H as Rule-based bot
     E->>D: a question, with its legal options
     D->>D: writes the prompt
     D->>API: one request, tried again on rate limits and dropped connections
     API-->>D: the reply text
     D->>D: finds the JSON object in it
     alt no reply, no JSON, or an empty {}
-        D->>H: play this one decision
-        H-->>E: the bot's decision, counted as a fallback
+        D-->>E: no answer, and why
+        E->>E: logs a forfeit and takes the answer that does nothing
     else a JSON answer
         D-->>E: the answer
         E->>E: checks it against the rules
         alt it breaks them
-            E->>H: play this one decision
-            H-->>E: the bot's decision, counted as an illegal decision
+            E->>E: logs a forfeit with what was given, and takes the answer that does nothing
         else it is legal
             E->>E: applies it, says its lines, asks anyone spoken to for a reply
         end
     end
+    Note over E: the turn goes on either way: rent, tax, cards and debts are paid
 ```
 
-The bot plays the decision when the call still fails after its retries (the network, a rate limit, a timeout),
-when the reply holds no JSON object or only an empty `{}`, and when the answer is the wrong shape: a buy that is
-not true or false, a bid that is not a number, a trade response with neither an answer nor a counter-offer,
-actions that are not a list, a square that was not on offer. Inside a good answer, an action that turns out to be
-illegal (building out of turn, mortgaging a street with houses on its set, more than it can afford) is skipped and
-logged and the rest still apply; and when a raise-cash plan does not raise enough, the bot finishes the job. Every
-fallback and illegal decision is counted against the model in the statistics.
+A choice is forfeited when the call still fails after its retries (the network, a rate limit, a timeout), when the
+reply holds no JSON object or only an empty `{}`, and when the answer is the wrong shape: a buy that is not true or
+false, a bid that is not a number, a trade response with neither an answer nor a counter-offer, actions that are
+not a list, a square that was not on offer. Nobody plays in the model's place: the engine takes the answer that does
+nothing, below, and the turn goes on with everything the rules require of the player. The forfeit is an event of
+its own in the game's log (`forfeit`: the player, the question, what went wrong, `error`, `empty`, `unparseable`,
+`invalid` or `none`, the reason, the answer given when there was one, and the call), a line in the game's feed, and
+a count against the model in the statistics.
+
+| Question | A forfeit comes to |
+| --- | --- |
+| Pre-roll | Nothing before the roll: no building, selling, mortgaging or trading; in Jail it rolls for doubles |
+| Buy | No purchase, so the property goes to auction like any declined one |
+| Bid | A bid of nothing |
+| Trade response | The offer rejected, logged as a rejection for want of a valid answer, with the reason |
+| Reply | Nothing said |
+| Raise cash | The bank's forced sale settles the debt (below) |
+| Choose a square (Mega) | It stays where it is |
+| Choose a property (Mega) | Nothing is auctioned |
+
+Inside a good answer, an action that turns out to be illegal (building out of turn, mortgaging a street with houses
+on its set, more than it can afford) is skipped and logged and the rest still apply. When a raise-cash plan, or a
+forfeit, leaves a debt unpaid, the bank's forced sale settles it: a mortgage at a time, then a building at a time,
+each the first in board order that the rules allow, the same for every player and with no strategy in it, and
+bankruptcy when that is not enough. The rule-based bot plays only the seats a table gives it by name (the
+`heuristic` provider, used in tests); before v2.0 it also stood in for a model that gave no usable answer, as it did
+in the game quoted below, and those decisions were counted as fallbacks and illegal decisions.
 
 ## 4. Real prompts from your game
 
@@ -537,6 +570,7 @@ pie showData
 | --- | --- |
 | The questions and when they are asked | `engine.js`: `prerollPhase`, `offerPurchase`, `auction`, `proposeTrade`, `handleTalk`, `raiseCash`, `triples`, `auctionSquare` |
 | The prompt | `ai.js`: `rulesText`, `boardText`, `AIDecider.systemBlocks`, `stateText`, `decisionText` |
-| The answer, its checks and the bot | `ai.js`: `parseJsonReply`, `AIDecider.decide`; `engine.js`: `validate`; `heuristics.js`: `heuristicDecide` |
+| The answer, its checks and the forfeit | `ai.js`: `parseJsonReply`, `AIDecider.decide`; `engine.js`: `decide`, `validate`, `FORFEIT`, `forcedSale` |
+| The time of a turn | `engine.js`: `playTurn` (the `turn_end` event); `stats.js` and `replay.js` total it |
 | The API calls | `providers.js`: `callModel` and an adapter for each API |
 | The settings | `engine.js` `DEFAULT_CONFIG` (`aiPreroll`, `aiRaiseCash`, `maxTradesPerTurn`, `maxNegotiationRounds`); the runner's config (`maxTokens`, `timeoutSeconds`, each seat's `effort` and `instructions`, `universal`) |

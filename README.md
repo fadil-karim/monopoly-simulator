@@ -1,20 +1,22 @@
 # Monopoly AI Simulator
 
 Eight AI models play Monopoly against each other at one table, and anyone can
-watch. The games are played from the owner's machine with the owner's API
-keys and streamed to this site move by move; every game is kept in a database
-with its full event log and every model call, so visitors can follow the game
-being played, open any past game and step through it, read what happened,
-and compare the board's statistics and every model's record. The site opens
-on a homepage of games: Monopoly, played today, and chess, checkers,
-Battleship and Connect 4 to come, with the plan for building them in
-`PLAN.md`.
+watch. The games are played by the simulator, on the owner's machine or a
+cloud instance, in its Docker container, with the owner's API keys; it keeps
+every game in its own store and streams it to this site move by move, where
+a copy of every game is kept with its full event log and every model call,
+so visitors can follow the game being played, open any past game and step
+through it, read what happened, and compare the board's statistics and every
+model's record. The site opens on a homepage of games: Monopoly, played
+today, and chess, checkers, Battleship and Connect 4 to come, with the plan
+for building them in `PLAN.md`.
 
 The site is a Cloudflare Worker: the homepage and the Monopoly viewer in
 `public/` served as static assets, `src/worker.js` for everything under
-`/api/` (the match history in D1, the runner's uploads, the optional
-narrator), and `runner/run.mjs`, a Node program the owner runs wherever the
-keys live.
+`/api/` (the site's copy of the games in D1, the simulator's uploads, the
+optional narrator). The simulator is `runner/` with the engine and the AI
+layer it shares with the site, run where the keys live and apart from the
+site, so either can be updated without touching the other.
 
 ## What visitors get
 
@@ -95,8 +97,9 @@ leading back to the homepage):
   group, and a table of every property.
 - **Model stats**: every model's record: games, wins, win rate, average rank
   and net worth, bankruptcies and when, rent in and out, purchases, auctions,
-  trades, buildings, jail, table talk, calls a game, fallbacks, illegal
-  decisions, latency, tokens per call and its own dice. A model is identified
+  trades, buildings, jail, table talk, calls a game, forfeits a game,
+  fallbacks, illegal decisions, the time a turn, latency, tokens per call and
+  its own dice. A model is identified
   by provider, exact model id and effort, and by the model id the API itself
   reported back.
 
@@ -121,8 +124,8 @@ Perplexity does not serve, go through OpenRouter with one
 `"seats"` sets the table, and the standard board clamps it to eight. `node runner/run.mjs
 --list-models perplexity` and `--list-models openrouter` print the
 catalogues for your keys, the place to check the ids. A seat whose call
-fails plays that decision by the rules-based bot and the call is logged as
-a fallback. No web search is requested from Perplexity, so a call costs
+fails, or whose answer cannot be used, forfeits that choice (see "No answer,
+no choice" below). No web search is requested from Perplexity, so a call costs
 only its tokens; its models get the effort as `reasoning.effort`, are asked
 for no JSON mode (asked for one, GPT, Grok and Kimi answered `{}` to every
 decision) and stream their replies, since Perplexity closes a call that has
@@ -140,24 +143,28 @@ rule-based bot. Effort maps to each provider's reasoning knob
 Groq, thinking budgets for Gemini, `thinking` on and off for GLM,
 `reasoning.effort` on Perplexity and OpenRouter); a provider that
 rejects a knob gets the call again without it. Any call that fails or
-returns no usable JSON, an empty `{}` included, falls back to the
-rule-based player for that one decision and is counted as a fallback.
+returns no usable JSON, an empty `{}` included, forfeits that one choice,
+logged with the reason; no bot plays in the model's place.
 
 ## Where things run and where the data lives
 
 - **The site and its API** are one Cloudflare Worker, deployed by Workers
   Builds on every push to `main`. There is nothing to start: the Worker
   serves the viewer and answers `/api/*`.
-- **The data** lives in Cloudflare D1, a SQLite database bound to the Worker
-  (`migrations/` holds its schema: games, seats, events, model calls and what
-  each call cost). The deploy creates the database and binds it, and the
-  Worker lays out its tables the first time it reaches it. The runner writes
-  into it through the API as a game is played; viewers read from it.
-- **The games** are played by `runner/run.mjs`, a Node program you run on
-  any machine that holds your API keys: your laptop, a VPS, a cron job. It
-  needs Node 20 or later, the keys in `runner/.env`, and the site's address
-  and runner token. Every game is also written to `runner/out/` on that
-  machine as a JSON file.
+- **The site's copy of the games** lives in Cloudflare D1, a SQLite database
+  bound to the Worker (`migrations/` holds its schema: games, seats, events,
+  model calls and what each call cost). The deploy creates the database and
+  binds it, and the Worker lays out its tables the first time it reaches it.
+  The simulator writes into it through the API as a game is played; viewers
+  read from it.
+- **The games** are played by the simulator, `runner/`, on any machine that
+  holds your API keys: your laptop or a cloud instance, in its Docker
+  container (`Dockerfile`, `docker-compose.yml`) or with Node 20 or later. It
+  keeps every game in its own store as it is played, in its data folder
+  (`/data` in the container, a volume of its own; `runner/` otherwise), and
+  sends the site a copy: the store is the record, the site's copy can be
+  filled again from it, and neither an update to the site nor one to the
+  simulator touches the other's data.
 
 ## Setting up the site
 
@@ -175,20 +182,27 @@ rule-based player for that one decision and is counted as a fallback.
    ```bash
    npx wrangler secret put RUNNER_TOKEN
    ```
-   The runner checks the site before it plays and says which of the two is
-   missing, then checks the token itself before it starts a game. Spaces or
-   a line break around the token, on either side, are ignored; when the site
-   refuses it, the runner says which token it sent, where from and how long,
-   so a mistyped or stale one shows.
+   The simulator checks the site before it plays and says what is missing,
+   then tries the token itself. Spaces or a line break around the token, on
+   either side, are ignored; when the site refuses it, the simulator says
+   which token it sent, where from and how long, so a mistyped or stale one
+   shows, and keeps the games in its store until the two match.
 3. Optional narrator, for the "ask the game" box: `npx wrangler secret put
    NARRATOR_API_KEY`, and `NARRATOR_PROVIDER`, `NARRATOR_MODEL`,
    `NARRATOR_EFFORT`, `NARRATOR_BASE` as vars or secrets (defaults: Anthropic,
    `claude-sonnet-5-5`, low). `ASK_LIMIT` caps questions per address per hour
    (20). The transcript is trimmed to `ASK_MAX_CHARS` (120,000).
 
-## Running the games
+## Running the simulator
 
-On the machine that holds the keys, the easy way is the dashboard:
+The simulator is the engine, the AI players and the runner: it plays the
+games with your keys, keeps every game in its own store as it is played, and
+sends the site a copy. It runs apart from the site, on your machine or on a
+cloud instance, in its Docker container or straight from the repository with
+Node 20 or later, so the site can be updated, redeployed or even emptied
+without touching a game in play or the record of the games played.
+
+### With the dashboard
 
 ```bash
 npm run dashboard        # or: node runner/run.mjs --dashboard
@@ -199,18 +213,62 @@ skips the browser) with the site, the runner token, a key box for every
 provider in the pool, the pool itself (add, remove, and choose each model
 from a dropdown of every model its provider serves to your key, the ones known
 here before a key is in, grouped by maker, with Other for any id), the seats,
-the edition, the games a batch, the
-loop, a dry run, the instructions and the narrator. Save writes the table
-to `runner/config.json`; Start saves and runs the runner, showing its
-progress, the games finished and a link to the site's Live tab; Check the
-seats asks every model in the pool one real decision, as a game would, and
-says which answer (with the decision, the time and the cost) and which
-would hand their decisions to the bot, and why, for a few cents and without
-touching the site; Stop finishes the uploads and marks a running game
-aborted. The keys are
-handed to the runner for the run only, unless "remember" writes them to
-`runner/.env`. Both files are ignored by git. The command line does the
-same without the page:
+the edition, the games a batch, the loop, a dry run, the instructions and the
+narrator. Save writes the table to `config.json` in the data folder; Start
+saves and runs the simulator, showing its progress, the games finished and a
+link to the site's Live tab; Check the seats asks every model in the pool one
+real decision, as a game would, and says which answer (with the decision, the
+time and the cost) and which would forfeit their decisions, and why, for a few
+cents and without touching the site; Stop after this game plays the games in
+play to the end and starts no more; Stop now ends them after the current turn
+and keeps them in the store as stopped. Under it is the store: the latest
+games, whether each finished or stopped and whether the site has it whole,
+with a button to send the site what it lacks and another to send everything
+again after its database was replaced. The keys are handed to the runner for
+the run only, unless "remember" writes them to the data folder's `.env`.
+Both files are ignored by git. With `DASHBOARD_PASSWORD` set, the page asks
+for it.
+
+### In Docker, on your machine or a cloud instance
+
+```bash
+docker compose up -d --build            # the dashboard, at http://127.0.0.1:8788/
+```
+
+The image (`Dockerfile`) holds the simulator alone, the engine and the AI
+layer from `public/assets/app/` with `runner/`, on Node 22, with nothing to
+install; the site is not in it. Everything it keeps is in `/data`, the volume
+`monopoly-data`: the store of games, and the table and the keys when the
+dashboard saves them. Rebuilding or updating the image, or `docker compose
+down`, leaves the volume alone (`docker compose down -v` deletes it). The
+dashboard is published on this machine's loopback only.
+
+On a cloud instance, headless, the keys go in `simulator.env` (copy
+`simulator.env.example`; it is ignored by git):
+
+```bash
+MONOPOLY_MODE=play docker compose up -d --build   # batch after batch, from the table in /data or the default one
+docker compose logs -f                            # what it is doing
+docker compose run --rm simulator probe           # does every seat answer?
+docker compose run --rm simulator store           # what the store holds, and what the site has of it
+```
+
+The dashboard works there too: start it as above without `MONOPOLY_MODE`,
+reach it through an SSH tunnel (`ssh -L 8788:127.0.0.1:8788 you@the-instance`,
+then http://127.0.0.1:8788/), and set `DASHBOARD_PASSWORD` in `simulator.env`
+as a second lock. The container's other modes are `once` (one batch),
+`publish`, `republish`, `import-site`, `models <provider>`, or any of the
+runner's options (`docker compose run --rm simulator --games 3 --dry`). To
+update the simulator without cutting a game short, finish the game first, with
+the dashboard's Stop after this game or, headless, `docker compose kill -s
+SIGUSR2 simulator`, which plays it to the end and then holds; then `git pull
+&& docker compose up -d --build`. Stopping the container (`docker compose
+stop`, a reboot) ends a game in play after its current turn and keeps it as
+stopped; a container killed outright leaves its game for the next start to mark
+stopped. `docker compose cp simulator:/data ./monopoly-data-backup` copies the
+whole store out.
+
+### From the command line
 
 ```bash
 cat > runner/.env <<'ENV'
@@ -234,32 +292,87 @@ drawn at random from its pool of nine for every game, never the same model
 twice, Claude on the Anthropic API, Gemini on Google's, ChatGPT, Grok, Kimi
 and Nemotron through Perplexity's Agent API with one key, and MiMo, Qwen
 and DeepSeek through OpenRouter with another. To change players, models,
-efforts or the engine settings, copy it to `runner/config.json` (ignored
-by git) and edit that; the runner prefers it when it exists.
+efforts or the engine settings, copy it to `config.json` in the data folder
+(`runner/config.json` here, `/data/config.json` in the container; ignored by
+git) and edit that, or save the table from the dashboard; the simulator
+prefers it when it exists.
 
 `--loop` plays a batch of `games` from the config, pauses
-`pauseBetweenGamesMs`, and starts the next; `--seats`, `--games`, `--concurrency`,
-`--seed`, `--edition`, `--max-rounds`, `--delay` (a pause before every turn)
-and `--dry` (play without uploading) override the config; `--list-models
-<provider>` prints what a provider serves to your key and exits; `--probe`
-asks every model in the pool one decision and says which seats answer. Every game is also
-written to `runner/out/<id>.json`. A player whose key is missing plays as the
-rule-based bot and says so at start. With `"narrator"` in the config the
-runner writes the match report at the end of each game with that model. Stop
-with Ctrl-C: the uploads finish and running games are marked aborted.
+`pauseBetweenGamesMs`, and starts the next; `--seats`, `--games`,
+`--concurrency`, `--seed`, `--edition`, `--max-rounds`, `--delay` (a pause
+before every turn) and `--dry` (keep the games in the store and send the site
+nothing) override the config; `--data <dir>` names the data folder
+(`MONOPOLY_DATA`, else `runner/`); `--list-models <provider>` prints what a
+provider serves to your key and exits; `--probe` asks every model in the pool
+one decision and says which seats answer; `--store`, `--publish`,
+`--republish` and `--import-site` look after the store (below). A model whose
+key is missing is left out of the pool, and the simulator says so at start:
+nobody plays in its place. With `"narrator"` in the config the simulator
+writes the match report at the end of each game with that model. Ctrl-C (or
+SIGTERM) ends the games in play after the current turn, keeps them in the
+store as stopped and sends the site what it can; SIGUSR2 plays them to the
+end and starts no more.
 
-Prompts are not stored unless `"logPrompts": true` (or `--log-prompts`); the
-reply, the parsed decision, latency and tokens always are.
+The store keeps every call's prompts; the site gets them only with
+`"logPrompts": true` (or `--log-prompts`), and always gets the reply, the
+parsed decision, the time, the tokens and the cost.
 
-When the runner cannot reach the site it says why before it plays: an
+When the site cannot be reached the simulator says why, and plays on: an
 address that does not resolve (the domain not attached to the Worker yet, or
 an old answer cached on the machine), a certificate it will not trust (a new
 domain's still on its way, or a VPN, proxy or antivirus in between), nothing
-answering, or a page that is not the site's API. A model call that cannot
-reach its API carries the same reason in its error, and is tried again
-before its decision goes to the bot: a rate limit after as long as the API
-asks (or 4 to 32 seconds), a connection that never opened four more times
-over about twenty seconds, a server error or a cut connection twice more.
+answering, or a page that is not the site's API. The games wait in the store
+and go to the site once it answers, tried again after a few seconds and then
+every minute for as long as it takes. A model call that cannot reach its API
+carries the same reason in its error, and is tried again before the choice is
+forfeited: a rate limit after as long as the API asks (or 4 to 32 seconds), a
+connection that never opened four more times over about twenty seconds, a
+server error or a cut connection twice more.
+
+### The store
+
+Every game is written to the store as it is played, before anything is sent.
+`games/<id>/` in the data folder holds `game.json` (the seats, the models, the
+config and the seed, with the simulator's version), `events.jsonl` (every
+event, a line each, the time of every turn among them), `calls.jsonl` (every
+model call with its prompts and its reply), `finish.json` (the result, the
+summary and each player's statistics) or `abort.json` (why it stopped), and
+`published.json` (what the site has of it); once a game is over its two logs
+are gzipped, a tenth of the room. The site's copy is filled from the store as
+the game plays, a few batches at a time; when the site cannot take them (an
+update, an outage, a refused token, a new database) the games wait and go when
+it can, so a game in play never waits on the site and nothing done to the site
+touches the record. A game goes only to the site it was played for, which
+`game.json` names: a game played against a site on your own machine, a test,
+never reaches the public one, and a dry run's games stay in the store.
+`--publish` (or the dashboard's button) sends the site whatever it lacks, `--republish` everything again after its database was
+replaced or emptied (the site ignores what it already has), and `--store`
+lists what the store holds. `--import-site` copies into the store every game
+the site has and the store has not, the games played before v2.0 among them,
+with their events, calls and results, so that the store holds them all. A
+game whose simulator stopped without ending it (a crash, a container killed)
+is marked stopped by the next start and sent to the site so. The runner no
+longer writes the single-file copies of `runner/out/`.
+
+### No answer, no choice
+
+A model plays on its own answers or not at all. A call that still fails after
+its retries, a reply with no JSON or only an empty `{}`, or an answer that
+breaks the rules forfeits that one choice: the engine takes the answer that
+does nothing (nothing before the roll, no purchase, a bid of nothing, the trade
+offer rejected), logs the forfeit with what went wrong and why, and the turn
+goes on with its obligations: rent, tax and cards, and debts, which the bank's
+forced sale settles when the player's own plan does not (mortgages, then
+buildings, in board order, then bankruptcy). A trade offer left without a
+valid answer is logged as rejected by default, with the reason, and the trades
+ledger shows it so. Forfeits appear in the game's feed, on each player's card
+and in the model statistics; the rule-based bot plays only the seats a table
+gives it by name (`config.bots.json`, for tests). `AI.md` has the details.
+
+Every turn is timed, from the question before the roll to the end of the turn,
+the answers it waits on from the other players included, and kept with the
+game: each player's card shows its average turn, and the model statistics each
+model's average over its games.
 
 ### What a game costs
 
@@ -324,6 +437,9 @@ npm run dev                # wrangler dev --env local, with RUNNER_TOKEN=local-d
 node runner/run.mjs --config runner/config.bots.json --token local-dev-token --games 2
 ```
 
+The bot games go to `runner/games/`, the store of a simulator run from the
+repository (`--data` puts them elsewhere).
+
 then open http://127.0.0.1:8789 (or whatever port wrangler prints) for the
 homepage, and http://127.0.0.1:8789/monopoly/ for the Monopoly page.
 
@@ -360,7 +476,7 @@ public/
   assets/app/pricing.js       what a call costs: the price list, the APIs' names, the reported cost
   assets/app/board.js         boards, groups, cards
   assets/app/engine.js        game rules and event log (shared with the runner)
-  assets/app/heuristics.js    rule-based decisions and fallbacks
+  assets/app/heuristics.js    the rule-based player, for seats given to it by name
   assets/app/providers.js     provider adapters and effort mapping
   assets/app/ai.js            prompts, JSON parsing, model-call records
   assets/app/runner.js        batch runner used by runner/run.mjs
@@ -371,8 +487,13 @@ src/aggregate.js             the statistics aggregations
 migrations/0001_init.sql     the schema
 migrations/0002_cost.sql     the cost of each call
 migrations/0003_site.sql     the site's own records: the pool the runner reported (the Worker applies all three itself)
-runner/run.mjs               plays games and streams them to the site
-runner/dashboard.mjs         the local dashboard (with dashboard.html): the table, the keys, start and stop
+runner/run.mjs               the simulator: plays games, keeps them in its store and sends them to the site
+runner/store.mjs             the store of games and the publisher that copies it to the site
+runner/dashboard.mjs         the dashboard (with dashboard.html): the table, the keys, start and stop, the store
+runner/docker-entrypoint.sh  the container's modes: dashboard, play, once, probe, store, publish, import-site
+Dockerfile                   the simulator's image, apart from the site
+docker-compose.yml           the simulator as a service, its data in the volume monopoly-data
+simulator.env.example        the keys and the token for the container (copied to simulator.env, ignored by git)
 runner/config.default.json   the default table: the pool of models and the seats
 runner/config.bots.json      rule-based players, for local tests
 scripts/simulate.mjs         headless engine check
@@ -404,4 +525,6 @@ wrangler.jsonc               Worker + assets + the D1 binding (the deploy create
 Pushing to `main` deploys through Cloudflare Workers Builds. `wrangler.jsonc`
 carries the Worker, the assets and, once the owner has created it, the D1
 binding; the runner token and any narrator key are Worker secrets, never in
-the repository.
+the repository. The simulator is not deployed with the site: it runs where the
+keys are, from its container or the repository, a push to `main` never touches
+it, and it is updated by rebuilding its image.

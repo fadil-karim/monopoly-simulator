@@ -10,9 +10,12 @@ A Cloudflare Worker site: a homepage of games and the Monopoly viewer in
 (London and Mega editions) against each other, up to eight at a table drawn
 from a pool, with chess, checkers, Battleship and Connect 4 on the homepage
 as placeholders and the plan for them in `PLAN.md`; the games are played by
-`runner/run.mjs` on the owner's machine with the owner's keys and streamed
-to the site, which keeps every game in D1 and shows them live and move by
-move. There is no build step - the files in `public/` are the site. The repo
+the simulator (`runner/`, in its Docker container or from the repository) on
+the owner's machine or a cloud instance with the owner's keys, which keeps
+every game in its own store and streams it to the site; the site keeps a copy
+of every game in D1 and shows them live and move by move. The two are updated
+apart: a push here never touches a game in play or the simulator's store. There
+is no build step - the files in `public/` are the site. The repo
 is connected to Cloudflare Workers Builds, so **every push to `main` deploys
 to production**.
 
@@ -28,7 +31,9 @@ public/            everything served as assets
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks; 0002 the cost of each call; 0003 site_meta, the pool the runner reported), applied by the Worker itself on first use
-runner/            run.mjs plays games and streams them; dashboard.mjs + dashboard.html the local dashboard (the table, the keys, start and stop; `npm run dashboard` or `run.mjs --dashboard`); config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present) and out/ are ignored
+runner/            the simulator: run.mjs plays games, keeps them in the store and sends them to the site; store.mjs the store (GameStore) and the publisher (Publisher); dashboard.mjs + dashboard.html the dashboard (the table, the keys, start, stop after this game, stop now, the store; `npm run dashboard` or `run.mjs --dashboard`); docker-entrypoint.sh the container's modes; config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present), games/ (the store of a simulator run from the repository) and out/ (the single-file copies before v2.0) are ignored
+Dockerfile         the simulator's image: node:22-alpine with public/assets/app/ and runner/, nothing installed, /data a volume; .dockerignore keeps the keys and the local stores out of the build
+docker-compose.yml the simulator as a service: the dashboard on the host's loopback, or MONOPOLY_MODE=play headless; the keys from simulator.env (ignored; simulator.env.example lists them); /data on the volume monopoly-data
 scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), check-ledger.mjs (the ledgers vs the engine's cash, with the trading players of traders.mjs), seed-trades.mjs (a scripted trading game for the local site only, its eight models given as the pool), verify-viewer.mjs (the homepage and the viewer in headless Chromium)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/check:ledger/runner scripts
@@ -69,69 +74,160 @@ third argument for one. `transcript.js` has the one
 line per event (`fmtEvent`, `eventLine`) and the plain-text `transcript`
 (`compact` drops dice, moves and other noise; `maxChars` trims the middle).
 
+No model is played for, since v2.0, at the owner's request. `Game.decide` asks
+the decider and, when the call fails, the reply is not the JSON asked for or is
+empty (the decider's `__forfeit` and `__error`), or `validate` refuses the
+answer, logs a `forfeit` event (`player`, `decision`, `kind`: `error`, `empty`,
+`unparseable`, `invalid` or `none`, `reason`, `given` for a refused answer,
+`call` the call's seq) and plays the choice's `FORFEIT` default, the answer that
+does nothing: no actions before the roll (in Jail it rolls), no purchase, a bid
+of nothing, the trade offer rejected with `source: 'forfeit'` and the reason
+`no valid answer (…)`, nothing said, no square and no property on the Mega
+board. The turn goes on with its obligations, and a debt the player's own plan
+leaves unpaid goes to `forcedSale`, the bank's mechanical sale (a `forced_sale`
+event, then mortgages and then buildings, each the first in board order that
+the rules allow) before bankruptcy. The rule-based bot (`heuristicDecide`)
+plays only a seat whose provider is `heuristic` and a game without a decider
+(`isBot`); before v2.0 it stood in for a failed model, logged as `ai_fallback`,
+`illegal_decision` and `decider_error`, which the reducer still reads. A game
+being stopped asks nobody more (`halted`: the forfeit's default, no event).
+Every turn is timed: `playTurn` logs `turn_end` with `ms`, from the pre-roll
+question to the end of the turn, the other players' answers included, and the
+player's engine stats keep `forfeits`, `turnMs` and `turnsTimed`. `replay.js`
+and `stats.js` total both (`forfeitsBy`, `longestTurnMs`), `transcript.js`
+words them (`fmtDuration`), the viewer puts a player's average turn and its
+forfeits on its card and the trades ledger says "rejects it by default, for
+want of a valid answer", and `check-replay` and `check-ledger` play flaky
+players (`traders(seed, { flaky })`, answering at random with an error,
+nothing, an empty reply or nonsense) and prove that every kind and question of
+forfeit appears, that a forfeited trade response is a rejection with its
+reason, and that the books still balance through the forced sales.
+
 `AI.md` sets out, for the owner, when a model is asked (the pre-roll once a
 turn before the dice, then buy, bid, trade response, reply, raise cash and the
 Mega board's two choices; never a roll or a move), what it is sent (text only,
 a new conversation each time: the cached rules and board, its identity and
 instructions, the state, the last 30 lines of table talk it could hear, and the
-question with its legal options), what it answers and when the rule-based bot
-plays instead, with Mermaid diagrams checked to render and real prompts and
+question with its legal options), what it answers and what a bad answer costs
+(a forfeit, logged with its reason, nobody playing in its place, a trade offer
+rejected by default), with Mermaid diagrams checked to render and real prompts and
 replies rebuilt from the event log of game `20261016-e34x-1`. A change to the
 decision points in `engine.js` or to the prompt in `ai.js` changes it too. The
 goal line of the prompt says the game is played until everyone else is bankrupt
 when there is no round limit; it once read "the round limit (null rounds)".
 
-The runner (`runner/run.mjs`) reads `runner/config.json` when it exists, else
+The simulator (`runner/run.mjs`, `VERSION` 2.0) works from its data folder
+(`--data`, else `MONOPOLY_DATA`, else `runner/`; `/data` in the container): the
+table from `<data>/config.json`, else `runner/config.json`, else
 `runner/config.default.json` (the pool of players, `seats`, universal
-instructions, engine config, narrator) and the keys from the environment or
-`runner/.env` (`PROVIDERS[*].env` names them), registers each game at
-`POST /api/ingest/games`, buffers events and calls and flushes them every
-700 ms, and at the end posts `finish` with the result, each player's rank,
-cash, net worth and `stats` (engine stats, income by source, rolls, calls
-with the served model ids) and the game `summary` (match totals, buildings,
-winner, per-property landings, rent, purchase and ownership changes), plus
-the narrator's recap when a narrator is configured. Uploads are idempotent
-(`INSERT OR IGNORE` by sequence), retried with backoff, and every game is
-also written to `runner/out/`. When the site cannot be reached the runner
-says why before it plays (`siteWhy` over `netReason`: an address that does
-not resolve, a certificate it will not trust, nothing answering, or a page
-that is not the site's API, each with what to check), then tries its token
-at `/api/ingest/check` before any game starts, since a game begins without
-waiting for the site and a refused token would otherwise stop the runner
-with model calls already made; a refusal names the token it sent, where from
-(`tokenFrom`: the dashboard's token box, which the dashboard marks with
-`MONOPOLY_DASHBOARD`, the environment, `runner/.env` or `--token`) and how
-long (`tokenRejected`). `--delay` pauses before each turn so a
-bot-only game can be watched live; `--loop` keeps playing batches. Each
-game's players are drawn from the pool by `pickSeats` in `runner.js`:
-`seats` of them at random (8 by default; the runner clamps it to eight on
-the standard board and to the distinct models in the pool), never the same
-model twice (`modelKey`, `provider/model`; the rule-based bot is not a
-model and may fill any number of seats), all of them when the pool is
-smaller, and a seed makes the draw repeatable. The dashboard
-(`runner/dashboard.mjs`, `npm run dashboard` or `run.mjs --dashboard`,
-127.0.0.1:8788, `--port`, `--no-open`) serves `dashboard.html`, a page
-that reads the table (`config.json`, else the default) and `runner/.env`
-into a form (site, token, a key box per provider in the pool, the pool
-with a dropdown of models per row, seats, edition, games, loop, round limit,
-dry run, instructions, narrator; a row's dropdown lists every model its
-provider serves to the key, asked for at `/api/models` as soon as a key is
-there and again with refresh, with the models the server knows before that,
-`knownModels`: the adapter's list and the priced ones with their names,
-grouped by the maker before the slash, and Other for an id typed by hand;
-the narrator's model is the same), writes the table to `runner/config.json`
-on Save or Start, writes the site, the token and the keys to `runner/.env`
-only when "remember" is ticked, and starts `run.mjs` as a child process
-with the keys in its environment, streaming its output to the page
-(polled every 1.5 s) and counting the finished games; Stop sends SIGINT,
-which the runner takes as its orderly stop. Check the seats starts it with
-`--probe` instead: one real decision for every model in the pool, at once
-(a street to buy, asked as a game asks it, through `AIDecider` and
-`Game.decide`), each answered ✓ with the decision, the time, the cost and
-the tokens, or ✗ with why (no key, an empty reply, an unparseable or
-refused one, an error) and the reply itself; the runner exits 1 when a
-seat would not play, and needs neither the site nor the token for it. When the table in use leaves the
-site blank, the form offers the default table's (`defaultSite`).
+instructions, engine config, narrator), and the keys from the environment or
+the data folder's `.env`, then `runner/.env` (`PROVIDERS[*].env` names them).
+A model whose key is missing is left out of the pool with a warning, since no
+bot plays in its place, and the simulator stops when fewer than two remain.
+Every game is written to the store as it is played (`GameStore` in
+`runner/store.mjs`, `<data>/games/<id>/`: `game.json` the registration with
+`site`, the site the game was played for and the only one it is ever sent to
+(none for a dry run; `mine` in the summary), so a test against a local site
+never reaches the public one,
+`events.jsonl` and `calls.jsonl` a line each, every call with its prompts,
+appended as they happen and gzipped by `compact` once the game has ended,
+`finish.json` or `abort.json`, `beat` a heartbeat every 30 s while in play, and
+`published.json`, what the site has: `{ site, registered, events, calls,
+finished, aborted }`, the events and calls counted in lines, since auction
+bids complete out of seq order), and the `Publisher` sends the site what it
+lacks: `soon(id)` from every hook, a pass at most every 700 ms a game and three
+games at once, registering at `POST /api/ingest/games`, the events 400 a batch
+and the calls 100 (their prompts only with `logPrompts`), then `finish` or
+`abort`; a failure is tried again after 2 s, doubling to a minute (five for a
+refusal), for as long as it takes, with one warning a new reason (`explain`:
+`tokenRejected` for a 401, `siteWhy` when the site was not reached), and a 404
+for a game the site had taken (its database replaced) sends that game again
+from its first line. So a game never waits on the site nor stops for it, and
+the checks before a batch (`checkSite`: `/api/health`, its database and token,
+`/api/ingest/check`, then the pool to `POST /api/ingest/pool`) only warn. The
+finish carries the result, each player's rank, cash, net worth and `stats`
+(engine stats, income by source, rolls, calls with the served model ids and the
+forfeits, `forfeits` by kind and question, `time`: the turns timed, their total,
+average and longest) and the game `summary` (match totals, buildings, winner,
+per-property landings, rent, purchase and ownership changes, `forfeits`,
+`time`, cost), plus the narrator's recap when a narrator is configured (cut
+short by a stop, `narratorStop`; the payload without it is kept on the game,
+`game.payload`, should the simulator have to go first). Ctrl-C or SIGTERM ends
+the games in play after the current turn (`runner.stop()`, end reason
+`stopped`, kept by `store.abort` as stopped by the owner), sends what it can and
+exits, a second one at once (`endNow`); SIGUSR2 plays them to the end and starts
+no more (`Runner.finishUp`), and with `--hold`, the container's play mode, the
+simulator then stays up idle until stopped. At every start, and every two
+minutes while playing, `sweep` marks stopped a game in play whose heartbeat is
+three minutes old (its simulator died) and gzips any ended game still in plain
+lines, and the backlog goes to the site in the background. `--store` lists the
+store, `--publish` sends the site every ended game it has not wholly got
+(`behind`, `drain`: a refusal is not tried again and a refused token stops the
+lot), `--republish` forgets what was sent first, and `--import-site` copies
+every game the site has and the store has not into the store from the public
+API (`/api/games`, `/events`, `/calls?full=1`), marked as on that site; `--dry`
+keeps the games in the store and sends nothing. When the site cannot be reached
+the simulator says why (`siteWhy` over `netReason`: an address that does not
+resolve, a certificate it will not trust, nothing answering, or a page that is
+not the site's API, each with what to check); a refused token names the token
+it sent, where from (`tokenFrom`: the dashboard's token box, which the
+dashboard marks with `MONOPOLY_DASHBOARD`, the environment, the `.env` file it
+came from, or `--token`) and how long (`tokenRejected`). `--delay` pauses
+before each turn so a bot-only game can be watched live; `--loop` keeps playing
+batches. Each game's players are drawn from the pool by `pickSeats` in
+`runner.js`: `seats` of them at random (8 by default; the runner clamps it to
+eight on the standard board and to the distinct models in the pool), never the
+same model twice (`modelKey`, `provider/model`; the rule-based bot is not a
+model and may fill any number of seats), all of them when the pool is smaller,
+and a seed makes the draw repeatable. The dashboard (`runner/dashboard.mjs`,
+`npm run dashboard` or `run.mjs --dashboard`, 127.0.0.1:8788, `--port` or
+`DASHBOARD_PORT`, `--host` or `DASHBOARD_HOST`, `--data`, `--no-open`; with
+`DASHBOARD_PASSWORD` set it asks for it, Basic auth compared in constant time)
+serves `dashboard.html`, a page that reads the table (`<data>/config.json`, else
+`runner/config.json`, else the default) and the data folder's `.env` into a
+form (site, token, a key box per provider in the pool, the pool with a dropdown
+of models per row, seats, edition, games, loop, round limit, dry run,
+instructions, narrator; a row's dropdown lists every model its provider serves
+to the key, asked for at `/api/models` as soon as a key is there and again with
+refresh, with the models the server knows before that, `knownModels`: the
+adapter's list and the priced ones with their names, grouped by the maker
+before the slash, and Other for an id typed by hand; the narrator's model is the
+same), writes the table to `<data>/config.json` on Save or Start, writes the
+site, the token and the keys to `<data>/.env` only when "remember" is ticked,
+and starts `run.mjs` as a child process with `--data` and the keys in its
+environment, streaming its output to the page (polled every 1.5 s) and counting
+the finished games; Stop now sends SIGINT and Stop after this game SIGUSR2
+(`/api/finish`), and the dashboard passes SIGTERM and SIGUSR2 on to its child
+and waits for it before it exits. Check the seats starts it with `--probe`
+instead: one real decision for every model in the pool, at once (a street to
+buy, asked as a game asks it, through `AIDecider` and `Game.decide`), each
+answered ✓ with the decision, the time, the cost and the tokens, or ✗ with why
+(no key, an empty reply, an unparseable or refused one, an error) and the reply
+itself, a seat that would forfeit its decisions; the runner exits 1 when a seat
+would not play, and needs neither the site nor the token for it. The store
+section (`storeState`, read at most every 4 s) lists the latest twelve games,
+their state and whether the site has them whole, and Send the site what it
+lacks and Send everything again start the runner with `--publish` or
+`--republish` (`task`: `play`, `probe` or `publish`). When the table in use
+leaves the site blank, the form offers the default table's (`defaultSite`).
+
+The container (`Dockerfile`: node:22-alpine, `package.json` for its `"type":
+"module"`, `public/assets/app/` and `runner/`, nothing installed, the user
+`node`, `MONOPOLY_DATA=/data`, `MONOPOLY_CONTAINER=1` (the registration's
+`runner.container`, and no browser opened), `DASHBOARD_HOST=0.0.0.0`) runs
+`runner/docker-entrypoint.sh`: `dashboard` (the default), `play` (`--loop
+--hold`), `once`, `probe`, `store`, `publish`, `republish`, `import-site`,
+`models <provider>`, or the runner's own options. `docker-compose.yml` runs it
+with `init: true` (so the signals reach node), `restart: unless-stopped`,
+`stop_grace_period: 60s`, the mode from `MONOPOLY_MODE`, the keys from
+`simulator.env` (optional, ignored by git), the dashboard on
+`127.0.0.1:${DASHBOARD_PORT:-8788}` only, and `/data` on the named volume
+`monopoly-data`, which a rebuild and `down` leave alone. The site and the
+simulator are updated apart, at the owner's request: a push to `main` never
+touches a game in play, the store or the image, and the simulator is updated by
+rebuilding its image, after Stop after this game (or `docker compose kill -s
+SIGUSR2 simulator`) lets the game in play end. Memory for the players, when it
+comes, belongs to the simulator and its data folder too.
 
 The Worker keeps games, seats, events and calls in D1 (`migrations/`). A
 model is identified by `model_key` = `provider/model@effort`, and
@@ -400,8 +496,8 @@ and `deepseek/deepseek-v4-pro`; eight is the most the standard board takes
 (the engine itself takes any number from two), and the seated players sit
 in a random order; the runner's `--list-models
 <provider>` prints a provider's catalogue for the owner's key, which is
-where those ids are checked, and a call that fails plays that decision by
-the rules-based bot (`ai_fallback`).
+where those ids are checked, and a call that fails forfeits that choice
+(`forfeit`).
 ## Local development
 
 ```bash
@@ -433,6 +529,14 @@ node runner/run.mjs --config runner/config.bots.json --token local-dev-token --g
    live, the ledgers, the roll label, the logos, the phone. For a change to
    the dashboard, drive it in headless Chromium with `/api/models` answered
    by a stand-in.
+6. For a change to the simulator's store, publisher or container: play bot
+   games against the local Worker with a `--delay`, take the Worker down
+   mid-game and bring it back, stop one with SIGINT, finish one with SIGUSR2
+   and kill one outright (its heartbeat aged), and check the site's copy
+   against the store (`--store`, the site's event counts); build the image and
+   run it with `--network host` against the local Worker in `once` and
+   `dashboard` modes (start, Stop after this game, a `docker stop` mid-game),
+   and bring `docker compose` up and down once.
 
 Never leave pushed work unverified or half-finished. Work in small, complete
 batches: implement, verify, commit, push.
@@ -504,3 +608,4 @@ no new prompt leaves the archive untouched.
 | v1.21 | A homepage for every game, with its players | The site now opens on a homepage of games: the players at the top, every model in the pool with its maker's logo, the API it plays through and its Monopoly record, then Monopoly with what is on its table now, and chess, checkers, Battleship and Connect 4 waiting beside it, marked coming soon. Monopoly has a page of its own, a click from the homepage, and old links to it still land there. A plan for building the four new games now sits with the code, ending with the questions that need your answer. |
 | v1.22 | Every seat really plays, and the game checks out | An audit of a live game found the board sound, with every lap past GO paid, every rent right and every player's cash accounted for, but three of the eight seats, ChatGPT, Grok and Kimi, were never really playing: Perplexity answered all their decisions with an empty reply, so the rule-based bot played for them. They are now asked the way Perplexity documents, their replies stream so a long think is no longer cut off after a minute, rate limits and brief network drops are waited out instead of handed to the bot, and a new Check the seats button asks every model one question before a batch to show which are answering. |
 | v1.23 | When the models are asked, and what they see | A new guide sets out how the AI players are prompted: once every turn before the dice and otherwise only when there is a choice to make, never for a roll or a move; that each question is plain text with the rules, the board, the state of the game and the recent table talk, with no picture, file or memory of earlier turns; and what they must answer, with diagrams of a turn, a trade and the table talk and real prompts from a game. The goal the models are given now reads correctly when a game has no round limit. |
+| v2.0 | The games play in a container of their own | The games are now played by a simulator that runs on its own in a Docker container, on your machine or a cloud instance, from its dashboard or unattended, keeping every game in a store of its own before it sends the site a copy, so the site can be updated, or its database replaced, without touching a game in play or the record of the games played. No model is played for any more: a model that gives no valid answer gives up that choice while its turn still pays what it owes, a trade offer left unanswered is rejected by default with the reason logged, and every turn is timed, the forfeits and the time a turn showing on the players' cards and in the model statistics. |
