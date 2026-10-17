@@ -1,0 +1,11 @@
+v2.1 is pushed to `main`. The turn is no longer timed; the wait for each answer is.
+
+- **What's timed:** every question put to a model, from the moment it's asked until the answer arrives (or fails). Each one gets its own line in the game log, against the player who answered: "Grok takes 8 s to answer the trade offer".
+- **Who it counts for:** the player who kept the table waiting, not the player whose turn it is. Auction bids and replies to a trade count for whoever gave them. The rule-based bot answers instantly and isn't timed.
+- **Where you see it:** each player's card shows their average wait per answer, and the game feed has a line per answer. In the model stats, "Time an answer" replaces "Time a turn", and the turn-time chart is gone.
+- **What's recorded:** each player's statistics carry the number of answers, the total wait, the average and the longest. Games played under v2.0 keep their turn times in their logs, but those are left out of the new figures.
+
+**Verified:**
+- I ran a game through the real AI path against a stand-in model that takes 0.2 to 0.65 s to answer. All 20 answers were timed and the bot never was. Each wait came within 3 ms of the call's own latency.
+- The replay check confirms every question is timed exactly once, with each forfeit logged right after its timed answer, across about 11,700 answers.
+- The ledger, simulation and provider checks pass, as do the dry-run deploy and all 99 browser checks.

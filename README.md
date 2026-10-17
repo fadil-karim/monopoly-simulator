@@ -98,7 +98,7 @@ leading back to the homepage):
 - **Model stats**: every model's record: games, wins, win rate, average rank
   and net worth, bankruptcies and when, rent in and out, purchases, auctions,
   trades, buildings, jail, table talk, calls a game, forfeits a game,
-  fallbacks, illegal decisions, the time a turn, latency, tokens per call and
+  fallbacks, illegal decisions, the time an answer, latency, tokens per call and
   its own dice. A model is identified
   by provider, exact model id and effort, and by the model id the API itself
   reported back.
@@ -334,7 +334,7 @@ server error or a cut connection twice more.
 Every game is written to the store as it is played, before anything is sent.
 `games/<id>/` in the data folder holds `game.json` (the seats, the models, the
 config and the seed, with the simulator's version), `events.jsonl` (every
-event, a line each, the time of every turn among them), `calls.jsonl` (every
+event, a line each, the wait for every answer among them), `calls.jsonl` (every
 model call with its prompts and its reply), `finish.json` (the result, the
 summary and each player's statistics) or `abort.json` (why it stopped), and
 `published.json` (what the site has of it); once a game is over its two logs
@@ -369,10 +369,11 @@ ledger shows it so. Forfeits appear in the game's feed, on each player's card
 and in the model statistics; the rule-based bot plays only the seats a table
 gives it by name (`config.bots.json`, for tests). `AI.md` has the details.
 
-Every turn is timed, from the question before the roll to the end of the turn,
-the answers it waits on from the other players included, and kept with the
-game: each player's card shows its average turn, and the model statistics each
-model's average over its games.
+Every wait for a model's answer is timed, from the question to the answer (or
+to its failure), and logged with the game against the player who kept the table
+waiting, so an auction's bids and a trade's answers count for whoever gave
+them; the turn itself is not timed. Each player's card shows its average answer,
+and the model statistics each model's average over its games.
 
 ### What a game costs
 

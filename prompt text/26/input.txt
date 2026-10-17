@@ -1,0 +1,1 @@
+dont time the turn itself, but time the wating on players answers

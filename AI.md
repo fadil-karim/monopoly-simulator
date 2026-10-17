@@ -27,7 +27,8 @@ doesn't. Everything here is read from the code (`public/assets/app/engine.js`, `
   rules forfeits that one choice: the engine takes the answer that does nothing (no purchase, a bid of nothing, a
   trade offer rejected), logs the forfeit with its reason, and the turn goes on with its obligations, rent, tax,
   cards and debts. Nobody plays in the model's place; before v2.0 the rule-based bot did.
-- **Every turn is timed,** from the question before the roll to the end of the turn, and logged with the game.
+- **Every answer is timed:** how long the table waited for it, from the question to the answer, logged with the game
+  against the player who answered. The turn itself is not timed.
 - **In your game:** 158 calls in the first 8 rounds (57 turns), about 2.8 a turn: 57 pre-rolls (one every turn),
   40 replies to table talk, 24 trade responses, 22 buys and 15 bids.
 
@@ -72,9 +73,11 @@ flowchart TD
 Any of those answers can also speak to the table, and a player spoken to is asked to reply (see
 [Talk and replies](#talk-and-replies)).
 
-Every turn is timed, from the moment the pre-roll question is asked to the end of the turn, the answers it waits on
-from the other players included, and logged as a `turn_end` event with its milliseconds: the site shows each
-player's average turn on its card and each model's in the model statistics.
+Every question is timed, not the turn: how long the table waited for the answer, from the moment the question is
+asked to the answer, or to the failure that forfeits it, logged as an `answer_time` event with its milliseconds
+against the player who answered. An auction's bids and a trade's answers count for the players who gave them, not
+for the player whose turn it is. The site shows each player's average answer on its card and each model's in the
+model statistics.
 
 ### Every question a model can be asked
 
@@ -571,6 +574,6 @@ pie showData
 | The questions and when they are asked | `engine.js`: `prerollPhase`, `offerPurchase`, `auction`, `proposeTrade`, `handleTalk`, `raiseCash`, `triples`, `auctionSquare` |
 | The prompt | `ai.js`: `rulesText`, `boardText`, `AIDecider.systemBlocks`, `stateText`, `decisionText` |
 | The answer, its checks and the forfeit | `ai.js`: `parseJsonReply`, `AIDecider.decide`; `engine.js`: `decide`, `validate`, `FORFEIT`, `forcedSale` |
-| The time of a turn | `engine.js`: `playTurn` (the `turn_end` event); `stats.js` and `replay.js` total it |
+| The time of an answer | `engine.js`: `decide` (the `answer_time` event); `stats.js` and `replay.js` total it |
 | The API calls | `providers.js`: `callModel` and an adapter for each API |
 | The settings | `engine.js` `DEFAULT_CONFIG` (`aiPreroll`, `aiRaiseCash`, `maxTradesPerTurn`, `maxNegotiationRounds`); the runner's config (`maxTokens`, `timeoutSeconds`, each seat's `effort` and `instructions`, `universal`) |

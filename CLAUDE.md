@@ -91,17 +91,24 @@ plays only a seat whose provider is `heuristic` and a game without a decider
 (`isBot`); before v2.0 it stood in for a failed model, logged as `ai_fallback`,
 `illegal_decision` and `decider_error`, which the reducer still reads. A game
 being stopped asks nobody more (`halted`: the forfeit's default, no event).
-Every turn is timed: `playTurn` logs `turn_end` with `ms`, from the pre-roll
-question to the end of the turn, the other players' answers included, and the
-player's engine stats keep `forfeits`, `turnMs` and `turnsTimed`. `replay.js`
-and `stats.js` total both (`forfeitsBy`, `longestTurnMs`), `transcript.js`
-words them (`fmtDuration`), the viewer puts a player's average turn and its
-forfeits on its card and the trades ledger says "rejects it by default, for
+The table's wait for every answer is timed, not the turn, at the owner's
+request (v2.1): `decide` logs `answer_time` (`player`, `decision`, `ms`,
+`call`) for every question put to a model, from the question to the answer or
+its failure, before anything the answer brings (a forfeit follows it at once),
+against the player who answered, so an auction's bids and a trade's answers
+count for the players who gave them; a bot answers at once and is not timed.
+The player's engine stats keep `forfeits`, `answerMs` and `answers`.
+`replay.js` and `stats.js` total both (`forfeitsBy`, `longestAnswerMs`),
+`transcript.js` words them ("takes 12 s to answer the trade offer";
+`fmtDuration`, compact transcripts leaving the line out), the `turn_end` of the
+first v2.0 games still reads and counts for nothing, the viewer puts a player's
+average answer and its forfeits on its card and the trades ledger says "rejects it by default, for
 want of a valid answer", and `check-replay` and `check-ledger` play flaky
 players (`traders(seed, { flaky })`, answering at random with an error,
 nothing, an empty reply or nonsense) and prove that every kind and question of
 forfeit appears, that a forfeited trade response is a rejection with its
-reason, and that the books still balance through the forced sales.
+reason, that every question asked is timed once with each forfeit right after
+its time, and that the books still balance through the forced sales.
 
 `AI.md` sets out, for the owner, when a model is asked (the pre-roll once a
 turn before the dice, then buy, bid, trade response, reply, raise cash and the
@@ -147,10 +154,10 @@ the checks before a batch (`checkSite`: `/api/health`, its database and token,
 `/api/ingest/check`, then the pool to `POST /api/ingest/pool`) only warn. The
 finish carries the result, each player's rank, cash, net worth and `stats`
 (engine stats, income by source, rolls, calls with the served model ids and the
-forfeits, `forfeits` by kind and question, `time`: the turns timed, their total,
-average and longest) and the game `summary` (match totals, buildings, winner,
-per-property landings, rent, purchase and ownership changes, `forfeits`,
-`time`, cost), plus the narrator's recap when a narrator is configured (cut
+forfeits, `forfeits` by kind and question, `answerTime`: the answers timed,
+their total, average and longest wait) and the game `summary` (match totals,
+buildings, winner, per-property landings, rent, purchase and ownership changes,
+`forfeits`, `answerTime`, cost), plus the narrator's recap when a narrator is configured (cut
 short by a stop, `narratorStop`; the payload without it is kept on the game,
 `game.payload`, should the simulator have to go first). Ctrl-C or SIGTERM ends
 the games in play after the current turn (`runner.stop()`, end reason
@@ -609,3 +616,4 @@ no new prompt leaves the archive untouched.
 | v1.22 | Every seat really plays, and the game checks out | An audit of a live game found the board sound, with every lap past GO paid, every rent right and every player's cash accounted for, but three of the eight seats, ChatGPT, Grok and Kimi, were never really playing: Perplexity answered all their decisions with an empty reply, so the rule-based bot played for them. They are now asked the way Perplexity documents, their replies stream so a long think is no longer cut off after a minute, rate limits and brief network drops are waited out instead of handed to the bot, and a new Check the seats button asks every model one question before a batch to show which are answering. |
 | v1.23 | When the models are asked, and what they see | A new guide sets out how the AI players are prompted: once every turn before the dice and otherwise only when there is a choice to make, never for a roll or a move; that each question is plain text with the rules, the board, the state of the game and the recent table talk, with no picture, file or memory of earlier turns; and what they must answer, with diagrams of a turn, a trade and the table talk and real prompts from a game. The goal the models are given now reads correctly when a game has no round limit. |
 | v2.0 | The games play in a container of their own | The games are now played by a simulator that runs on its own in a Docker container, on your machine or a cloud instance, from its dashboard or unattended, keeping every game in a store of its own before it sends the site a copy, so the site can be updated, or its database replaced, without touching a game in play or the record of the games played. No model is played for any more: a model that gives no valid answer gives up that choice while its turn still pays what it owes, a trade offer left unanswered is rejected by default with the reason logged, and every turn is timed, the forfeits and the time a turn showing on the players' cards and in the model statistics. |
+| v2.1 | Timing the wait for each answer, not the turn | The game now times how long the table waits for each player's answer, rather than how long a whole turn takes, and charges the wait to the player who kept everyone waiting, so an auction's bids and a trade's replies count for whoever gave them. Each player's card shows its average answer, the game's feed says how long each answer took, and the model statistics give each model's time an answer. |
