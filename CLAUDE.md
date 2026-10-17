@@ -33,6 +33,7 @@ scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer v
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
 package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/check:ledger/runner scripts
 PLAN.md            the plan for building chess, checkers, Battleship and Connect 4, with the owner's open questions
+AI.md              how the models are prompted: when, with what, what they answer and when the bot steps in, with Mermaid diagrams and real prompts rebuilt from a game
 prompt text/       the AI-instruction archive for the version in service
 ```
 
@@ -67,6 +68,18 @@ no round from a `trade_counter` and `eventLine` takes the game's round as a
 third argument for one. `transcript.js` has the one
 line per event (`fmtEvent`, `eventLine`) and the plain-text `transcript`
 (`compact` drops dice, moves and other noise; `maxChars` trims the middle).
+
+`AI.md` sets out, for the owner, when a model is asked (the pre-roll once a
+turn before the dice, then buy, bid, trade response, reply, raise cash and the
+Mega board's two choices; never a roll or a move), what it is sent (text only,
+a new conversation each time: the cached rules and board, its identity and
+instructions, the state, the last 30 lines of table talk it could hear, and the
+question with its legal options), what it answers and when the rule-based bot
+plays instead, with Mermaid diagrams checked to render and real prompts and
+replies rebuilt from the event log of game `20261016-e34x-1`. A change to the
+decision points in `engine.js` or to the prompt in `ai.js` changes it too. The
+goal line of the prompt says the game is played until everyone else is bankrupt
+when there is no round limit; it once read "the round limit (null rounds)".
 
 The runner (`runner/run.mjs`) reads `runner/config.json` when it exists, else
 `runner/config.default.json` (the pool of players, `seats`, universal
@@ -490,3 +503,4 @@ no new prompt leaves the archive untouched.
 | v1.20 | Logo stickers on the board, houses you can see | Each model's token is now its maker's whole logo, cut out like a sticker with a white outline, instead of a small logo inside a coloured ring. Houses and hotels now stand on the property's colour band as they do on the printed board, a green house each and a red hotel, much larger than the old marks and outlined in white so they read on every colour. |
 | v1.21 | A homepage for every game, with its players | The site now opens on a homepage of games: the players at the top, every model in the pool with its maker's logo, the API it plays through and its Monopoly record, then Monopoly with what is on its table now, and chess, checkers, Battleship and Connect 4 waiting beside it, marked coming soon. Monopoly has a page of its own, a click from the homepage, and old links to it still land there. A plan for building the four new games now sits with the code, ending with the questions that need your answer. |
 | v1.22 | Every seat really plays, and the game checks out | An audit of a live game found the board sound, with every lap past GO paid, every rent right and every player's cash accounted for, but three of the eight seats, ChatGPT, Grok and Kimi, were never really playing: Perplexity answered all their decisions with an empty reply, so the rule-based bot played for them. They are now asked the way Perplexity documents, their replies stream so a long think is no longer cut off after a minute, rate limits and brief network drops are waited out instead of handed to the bot, and a new Check the seats button asks every model one question before a batch to show which are answering. |
+| v1.23 | When the models are asked, and what they see | A new guide sets out how the AI players are prompted: once every turn before the dice and otherwise only when there is a choice to make, never for a roll or a move; that each question is plain text with the rules, the board, the state of the game and the recent table talk, with no picture, file or memory of earlier turns; and what they must answer, with diagrams of a turn, a trade and the table talk and real prompts from a game. The goal the models are given now reads correctly when a game has no round limit. |

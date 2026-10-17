@@ -129,7 +129,8 @@ decision) and stream their replies, since Perplexity closes a call that has
 not answered within about a minute. When the runner starts it gives the
 site its pool, which the homepage lists as the players.
 
-Each player is a provider, a model id, an effort setting and optional
+How the models are prompted, when and with what, is set out with diagrams and
+real prompts in `AI.md`. Each player is a provider, a model id, an effort setting and optional
 instructions; the runner also records the model id each API reports back on
 every call. Providers available: Anthropic, OpenAI, Google Gemini, xAI,
 Perplexity (Agent API), Mistral, DeepSeek, Groq, Together, OpenRouter,
@@ -342,6 +343,7 @@ node scripts/verify-viewer.mjs   # the homepage and the viewer in headless Chrom
 
 ```
 PLAN.md                      the plan for chess, checkers, Battleship and Connect 4
+AI.md                        how the models are prompted: when, with what, and what they answer, with diagrams
 public/
   index.html                 the homepage: the players and the games
   monopoly/index.html        the Monopoly viewer: live, games, replay, Monopoly stats, model stats, about

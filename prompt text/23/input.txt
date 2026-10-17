@@ -1,1 +1,0 @@
-@"/root/.claude/uploads/c44d88dc-4393-5921-a8f4-3b1e43c484b4/ff14d2c8-monopoly-20261016-e34x-1.json" Also, check the transcript. Is the game working properly. Is it paying out properly on passing go etc. and why are some models dropping to heuristics?
