@@ -1,0 +1,1 @@
+ok, how do i run the cpu sim with 8 cpu players locally? i want a local dashboard updating the same data from the web version. running it via docker should have an option to launch the dashboard or not as the cloud instance wont need it

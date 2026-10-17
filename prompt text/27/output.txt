@@ -1,0 +1,29 @@
+v2.2 is pushed to `main`. Here's how to run it.
+
+**8 CPU players, locally**
+- Start the dashboard, with either `npm run dashboard` or `docker compose up -d --build`.
+- Open http://127.0.0.1:8788 and press **Run 8 CPU players**.
+
+That plays eight rule-based players (Ada, Babbage, Curie, Dirac, Euler, Fermat, Gödel and Hopper) batch after batch. It needs no keys and sends nothing to the public site. Turns take 300 ms so you can follow the game. A game also ends after 150 rounds if nobody has gone bankrupt; without that cap, eight bots rarely bankrupt each other and games ran to the engine's 1,000-round limit. Stop it with **Stop now** or **Stop after this game**.
+
+**The local dashboard**
+- The game shows live on the dashboard page itself, under "The table, live".
+- The links at the top open your local copy of the site: every game, the replays, both statistics pages and the players.
+- These are the web version's own pages, reading the games stored on your machine instead of the site's database. No site or network is involved.
+- I checked the two agree. For the same games, the local copy and the real site gave identical answers on all 36 reads the pages make. The only difference is a timestamp: when each side recorded a stopped game as stopped.
+- It shows every game on your machine, so model games you run from the dashboard appear there too.
+
+**Docker: dashboard or not**
+- The switch is `MONOPOLY_MODE`:
+  - left unset, the container runs the dashboard (your machine);
+  - `play` runs the simulator with no dashboard (the cloud instance);
+  - `cpu` runs the eight CPU players with no dashboard.
+- You can set it once in a `.env` file next to `docker-compose.yml` (ignored by git), so a plain `docker compose up -d` always does the same thing on that machine.
+- Without Docker, `npm run cpu` plays the CPU table from a terminal (`npm run cpu -- --delay 0` for full speed). A dashboard opened later shows its games.
+
+**Verified:**
+- I drove the dashboard in headless Chromium. Run 8 CPU players put eight players live on the page, and the local games, statistics and players pages worked. Stop now kept the game on this machine only, and nothing reached the site.
+- I built and ran the image. The dashboard served the local site and the CPU table live, and `docker stop` mid-game kept the game as stopped. The headless `cpu` mode played while a dashboard on the same volume showed its games.
+- All 99 site checks pass, as do the dashboard's model-picker test, the replay, ledger, simulation and provider checks, and the dry-run deploy.
+
+One assumption: I read "updating the same data from the web version" as your local dashboard showing the same pages and data as the website, for the games on your machine. If you also want the live site's games in it, `import-site` copies them into your local store (`docker compose run --rm simulator import-site`, or `node runner/run.mjs --import-site`), and they then appear on the dashboard.

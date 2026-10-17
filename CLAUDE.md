@@ -31,12 +31,12 @@ public/            everything served as assets
 src/worker.js      /api/*: the public reads, the runner's uploads (bearer RUNNER_TOKEN), the optional narrator; everything else -> env.ASSETS
 src/aggregate.js   the two statistics aggregations
 migrations/        the D1 schema (games, game_players, events, llm_calls, asks; 0002 the cost of each call; 0003 site_meta, the pool the runner reported), applied by the Worker itself on first use
-runner/            the simulator: run.mjs plays games, keeps them in the store and sends them to the site; store.mjs the store (GameStore) and the publisher (Publisher); dashboard.mjs + dashboard.html the dashboard (the table, the keys, start, stop after this game, stop now, the store; `npm run dashboard` or `run.mjs --dashboard`); docker-entrypoint.sh the container's modes; config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present), games/ (the store of a simulator run from the repository) and out/ (the single-file copies before v2.0) are ignored
-Dockerfile         the simulator's image: node:22-alpine with public/assets/app/ and runner/, nothing installed, /data a volume; .dockerignore keeps the keys and the local stores out of the build
-docker-compose.yml the simulator as a service: the dashboard on the host's loopback, or MONOPOLY_MODE=play headless; the keys from simulator.env (ignored; simulator.env.example lists them); /data on the volume monopoly-data
-scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), check-ledger.mjs (the ledgers vs the engine's cash, with the trading players of traders.mjs), seed-trades.mjs (a scripted trading game for the local site only, its eight models given as the pool), verify-viewer.mjs (the homepage and the viewer in headless Chromium)
+runner/            the simulator: run.mjs plays games, keeps them in the store and sends them to the site; store.mjs the store (GameStore) and the publisher (Publisher); dashboard.mjs + dashboard.html the dashboard (the table, the keys, start, stop after this game, stop now, the store, Run 8 CPU players, the table live; `npm run dashboard` or `run.mjs --dashboard`); local-site.mjs the site's pages and reads from the store, served by the dashboard (this machine's copy of the site); docker-entrypoint.sh the container's modes; config.cpu.json the CPU table (eight rule-based players, kept on this machine; `npm run cpu`); config.default.json the default table (the site, https://monopoly.basilicalabs.ai, and a pool of nine models and eight seats, drawn at random for every game, never the same model twice; Claude and Gemini direct, four through Perplexity, MiMo, Qwen and DeepSeek through OpenRouter); config.bots.json bots for tests; .env, config.json (the owner's overrides, preferred when present), games/ (the store of a simulator run from the repository) and out/ (the single-file copies before v2.0) are ignored
+Dockerfile         the simulator's image: node:22-alpine with public/ (the engine and AI layer, and the pages for the dashboard's copy of the site), src/aggregate.js and runner/, nothing installed, /data a volume; .dockerignore keeps the keys and the local stores out of the build
+docker-compose.yml the simulator as a service: the dashboard on the host's loopback, or MONOPOLY_MODE=play (or cpu) headless; the keys from simulator.env (ignored; simulator.env.example lists them); /data on the volume monopoly-data
+scripts/           simulate.mjs (engine invariants), check-replay.mjs (reducer vs engine), check-ledger.mjs (the ledgers vs the engine's cash, with the trading players of traders.mjs), seed-trades.mjs (a scripted trading game for the local site only, its eight models given as the pool), verify-viewer.mjs (the homepage and the viewer in headless Chromium), check-local-site.mjs (the dashboard's copy of the site against the local Worker, read for read)
 wrangler.jsonc     main + assets (binding ASSETS, 404-page, /api/* worker-first) + the production D1 binding DB, named monopoly-ai with no id (the deploy creates the database, or connects to the one of that name, through wrangler's automatic provisioning, and later deploys keep it) + env.local with a simulated D1
-package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/check:ledger/runner scripts
+package.json       wrangler devDependency + dev/deploy/check/migrate/simulate/check:replay/check:ledger/runner/dashboard/cpu scripts
 PLAN.md            the plan for building chess, checkers, Battleship and Connect 4, with the owner's open questions
 AI.md              how the models are prompted: when, with what, what they answer and when the bot steps in, with Mermaid diagrams and real prompts rebuilt from a game
 prompt text/       the AI-instruction archive for the version in service
@@ -217,14 +217,43 @@ their state and whether the site has them whole, and Send the site what it
 lacks and Send everything again start the runner with `--publish` or
 `--republish` (`task`: `play`, `probe` or `publish`). When the table in use
 leaves the site blank, the form offers the default table's (`defaultSite`).
+Run 8 CPU players (`options.table: 'cpu'`) starts the runner on
+`runner/config.cpu.json`, the CPU table: eight rule-based players seated every
+game, `--dry --loop`, 300 ms a turn (`turnDelayMs`; the pause box overrides it)
+and 150 rounds at most, since eight bots seldom bankrupt one another and would
+play to the engine's thousand; it leaves the saved table alone, and
+`npm run cpu` plays it from a terminal.
+
+The dashboard also serves this machine's copy of the site (`localSite` in
+`runner/local-site.mjs`, at the owner's request, so the games played locally,
+the CPU table's above all, are watched as the web version shows them): the
+site's own files from `public/` (the homepage at `/home/`, the Monopoly viewer
+at `/monopoly/`, the assets; the dashboard's page keeps `/`, so the viewer's
+"All games" leads back to it) and the Worker's public reads answered from the
+store in the Worker's shapes (`/api/health` with `local: true`, `/api/live`,
+`/api/games` with each game's cost, `/api/games/:id` with its seats, `/events`,
+`/calls` with `full`, `/transcript`, `/export`, `/api/stats/monopoly` and
+`/api/stats/models` through `aggregate.js`, `/api/players` with the pool of the
+table last played, `state.table`, else the saved one, and `ask` answering that
+the narrator is off). A game whose runner stopped reads as stopped; an ended
+game's counts are read from its gzipped lines and kept; the latest eight games'
+lines are kept and read as they grow. The page carries the table live (an
+iframe of `/monopoly/#live`, reloaded two seconds after a start) and links to
+the copy's tabs. `scripts/check-local-site.mjs` asks the local Worker and the
+copy every read for the same store and compares them field by field; a change
+to the Worker's reads changes `local-site.mjs` with it.
 
 The container (`Dockerfile`: node:22-alpine, `package.json` for its `"type":
 "module"`, `public/assets/app/` and `runner/`, nothing installed, the user
 `node`, `MONOPOLY_DATA=/data`, `MONOPOLY_CONTAINER=1` (the registration's
 `runner.container`, and no browser opened), `DASHBOARD_HOST=0.0.0.0`) runs
 `runner/docker-entrypoint.sh`: `dashboard` (the default), `play` (`--loop
---hold`), `once`, `probe`, `store`, `publish`, `republish`, `import-site`,
-`models <provider>`, or the runner's own options. `docker-compose.yml` runs it
+--hold`), `cpu` (the CPU table, `--dry --loop --hold`), `once`, `probe`,
+`store`, `publish`, `republish`, `import-site`, `models <provider>`, or the
+runner's own options; whether the dashboard runs is that one switch,
+`MONOPOLY_MODE` (on the command line, or once in a `.env` beside the compose
+file, ignored by git), at the owner's request: on by default for this machine,
+`play` for the cloud instance. `docker-compose.yml` runs it
 with `init: true` (so the signals reach node), `restart: unless-stopped`,
 `stop_grace_period: 60s`, the mode from `MONOPOLY_MODE`, the keys from
 `simulator.env` (optional, ignored by git), the dashboard on
@@ -544,6 +573,13 @@ node runner/run.mjs --config runner/config.bots.json --token local-dev-token --g
    run it with `--network host` against the local Worker in `once` and
    `dashboard` modes (start, Stop after this game, a `docker stop` mid-game),
    and bring `docker compose` up and down once.
+7. For a change to the dashboard's copy of the site (`runner/local-site.mjs`)
+   or to the Worker's reads: play bot games and a priced game against a stand-in
+   model into one store, published to a freshly migrated local Worker, start the
+   dashboard on that store and run `node scripts/check-local-site.mjs` (every
+   read the same); then drive the dashboard in headless Chromium: Run 8 CPU
+   players, the table live on the page, the copy's games, statistics and
+   players, and nothing sent to the site.
 
 Never leave pushed work unverified or half-finished. Work in small, complete
 batches: implement, verify, commit, push.
@@ -617,3 +653,4 @@ no new prompt leaves the archive untouched.
 | v1.23 | When the models are asked, and what they see | A new guide sets out how the AI players are prompted: once every turn before the dice and otherwise only when there is a choice to make, never for a roll or a move; that each question is plain text with the rules, the board, the state of the game and the recent table talk, with no picture, file or memory of earlier turns; and what they must answer, with diagrams of a turn, a trade and the table talk and real prompts from a game. The goal the models are given now reads correctly when a game has no round limit. |
 | v2.0 | The games play in a container of their own | The games are now played by a simulator that runs on its own in a Docker container, on your machine or a cloud instance, from its dashboard or unattended, keeping every game in a store of its own before it sends the site a copy, so the site can be updated, or its database replaced, without touching a game in play or the record of the games played. No model is played for any more: a model that gives no valid answer gives up that choice while its turn still pays what it owes, a trade offer left unanswered is rejected by default with the reason logged, and every turn is timed, the forfeits and the time a turn showing on the players' cards and in the model statistics. |
 | v2.1 | Timing the wait for each answer, not the turn | The game now times how long the table waits for each player's answer, rather than how long a whole turn takes, and charges the wait to the player who kept everyone waiting, so an auction's bids and a trade's replies count for whoever gave them. Each player's card shows its average answer, the game's feed says how long each answer took, and the model statistics give each model's time an answer. |
+| v2.2 | Eight CPU players, watched on your own copy of the site | One button on the dashboard now sets eight rule-based players playing on your own machine, with no keys and nothing sent to the site, and the dashboard shows the game live as the website does, with every game, the replays and the statistics in your own copy of the site's pages, read from the games stored on your machine. In the container the dashboard is a single switch, on for your machine and off for the cloud instance, which can also play the eight CPU players unattended. |

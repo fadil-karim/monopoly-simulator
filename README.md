@@ -202,6 +202,27 @@ cloud instance, in its Docker container or straight from the repository with
 Node 20 or later, so the site can be updated, redeployed or even emptied
 without touching a game in play or the record of the games played.
 
+### Eight CPU players, watched on your own copy of the site
+
+```bash
+npm run dashboard        # or: docker compose up -d --build
+```
+
+Open http://127.0.0.1:8788/ and press **Run 8 CPU players**: eight rule-based
+players (`runner/config.cpu.json`), with no keys and no model calls, play
+batch after batch on your machine alone, 300 ms a turn so you can follow them,
+a game ending after 150 rounds when nobody has gone bankrupt. Nothing is sent
+to the site. The game appears live on the dashboard page itself, under **The
+table, live**, and the links at the top open the rest of your local copy of the
+site: every game, the replays, both statistics pages and the players. These
+are the web version's own pages, reading the simulator's store on your machine
+instead of the site's database, so they show every game in your store as the
+site shows its games, updating as they're played, with no site, database or
+network involved. The same copy shows the games of the models' table you run
+from the dashboard too. From a terminal, `npm run cpu` plays the CPU table
+without the dashboard (`npm run cpu -- --delay 0` for full speed), and a dashboard opened
+later shows its games.
+
 ### With the dashboard
 
 ```bash
@@ -224,10 +245,12 @@ play to the end and starts no more; Stop now ends them after the current turn
 and keeps them in the store as stopped. Under it is the store: the latest
 games, whether each finished or stopped and whether the site has it whole,
 with a button to send the site what it lacks and another to send everything
-again after its database was replaced. The keys are handed to the runner for
-the run only, unless "remember" writes them to the data folder's `.env`.
-Both files are ignored by git. With `DASHBOARD_PASSWORD` set, the page asks
-for it.
+again after its database was replaced. The page also carries the table, live,
+from this machine's copy of the site, and links to its pages (`/monopoly/` and
+`/home/` on the dashboard's address), and Run 8 CPU players. The keys are
+handed to the runner for the run only, unless "remember" writes them to the
+data folder's `.env`. Both files are ignored by git. With `DASHBOARD_PASSWORD`
+set, the page asks for it.
 
 ### In Docker, on your machine or a cloud instance
 
@@ -236,12 +259,20 @@ docker compose up -d --build            # the dashboard, at http://127.0.0.1:878
 ```
 
 The image (`Dockerfile`) holds the simulator alone, the engine and the AI
-layer from `public/assets/app/` with `runner/`, on Node 22, with nothing to
-install; the site is not in it. Everything it keeps is in `/data`, the volume
+layer with `runner/`, on Node 22, with nothing to install, and the site's pages
+and statistics code for the dashboard's local copy; the site's Worker and
+database are not in it. Everything it keeps is in `/data`, the volume
 `monopoly-data`: the store of games, and the table and the keys when the
 dashboard saves them. Rebuilding or updating the image, or `docker compose
 down`, leaves the volume alone (`docker compose down -v` deletes it). The
 dashboard is published on this machine's loopback only.
+
+Whether the dashboard runs is the one switch, `MONOPOLY_MODE`: left out, the
+container runs the dashboard (on your machine); `play` runs the simulator with
+no dashboard (the cloud instance); `cpu` runs the eight CPU players with no
+dashboard. Set it on the command line, or once in a `.env` file beside
+`docker-compose.yml` (ignored by git) so that a plain `docker compose up -d`
+always does the same.
 
 On a cloud instance, headless, the keys go in `simulator.env` (copy
 `simulator.env.example`; it is ignored by git):
@@ -256,7 +287,8 @@ docker compose run --rm simulator store           # what the store holds, and wh
 The dashboard works there too: start it as above without `MONOPOLY_MODE`,
 reach it through an SSH tunnel (`ssh -L 8788:127.0.0.1:8788 you@the-instance`,
 then http://127.0.0.1:8788/), and set `DASHBOARD_PASSWORD` in `simulator.env`
-as a second lock. The container's other modes are `once` (one batch),
+as a second lock. The container's other modes are `cpu` (the eight CPU players,
+headless), `once` (one batch),
 `publish`, `republish`, `import-site`, `models <provider>`, or any of the
 runner's options (`docker compose run --rm simulator --games 3 --dry`). To
 update the simulator without cutting a game short, finish the game first, with
@@ -454,6 +486,7 @@ npm run check              # wrangler deploy --dry-run
 node scripts/check-providers.mjs # the provider adapters against a mock: the four API shapes, Perplexity's stream, the retries, the empty reply, what each call costs
 node scripts/seed-trades.mjs     # a scripted trading game for the local site only, for the trades ledger, the logos and the homepage's players
 node scripts/verify-viewer.mjs   # the homepage and the viewer in headless Chromium against the local Worker
+node scripts/check-local-site.mjs  # the dashboard's copy of the site against the local Worker, read for read, for the same games
 ```
 
 ## Project layout
@@ -490,13 +523,15 @@ migrations/0002_cost.sql     the cost of each call
 migrations/0003_site.sql     the site's own records: the pool the runner reported (the Worker applies all three itself)
 runner/run.mjs               the simulator: plays games, keeps them in its store and sends them to the site
 runner/store.mjs             the store of games and the publisher that copies it to the site
-runner/dashboard.mjs         the dashboard (with dashboard.html): the table, the keys, start and stop, the store
+runner/dashboard.mjs         the dashboard (with dashboard.html): the table, the keys, start and stop, the store, the table live
+runner/local-site.mjs        the site's pages and reads from the store, served by the dashboard: this machine's copy of the site
 runner/docker-entrypoint.sh  the container's modes: dashboard, play, once, probe, store, publish, import-site
 Dockerfile                   the simulator's image, apart from the site
 docker-compose.yml           the simulator as a service, its data in the volume monopoly-data
 simulator.env.example        the keys and the token for the container (copied to simulator.env, ignored by git)
 runner/config.default.json   the default table: the pool of models and the seats
 runner/config.bots.json      rule-based players, for local tests
+runner/config.cpu.json       the CPU table: eight rule-based players, kept on this machine (npm run cpu, Run 8 CPU players)
 scripts/simulate.mjs         headless engine check
 scripts/check-replay.mjs     the replay reducer against the engine
 scripts/check-ledger.mjs     the ledgers against the engine's cash, with trading players (scripts/traders.mjs)
