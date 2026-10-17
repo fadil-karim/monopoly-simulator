@@ -1,12 +1,30 @@
 // Monopoly game engine. Pure logic, no DOM. Works in the browser and in Node.
-// Decisions are delegated to a `decider` object with an async decide() method;
-// every decision is validated here and falls back to the built-in heuristics
-// when the decider returns something illegal, so a game can never stall.
+// Decisions are delegated to a `decider` object with an async decide() method,
+// and every answer is validated here. Nothing plays for a model: an answer that
+// fails, cannot be read or breaks the rules forfeits that one choice (FORFEIT,
+// the passive default, logged as a `forfeit` with its reason), and the game goes
+// on with the player's obligations (rent, tax, cards, the jail fine) still met.
+// Only a seat configured as the rule-based bot, or a game with no decider at
+// all, is played by the heuristics.
 
 import { makeBoard, GROUPS, CHANCE_CARDS, CHEST_CARDS, EDITION_INFO } from './board.js';
 import { heuristicDecide } from './heuristics.js';
 
 export const SPEED_DIE = [1, 2, 3, 'mr', 'mr', 'bus'];
+
+// What a forfeited choice comes to: do nothing before the roll, decline to buy (the property is auctioned), bid
+// nothing, reject the trade, stay silent, raise no cash of one's own (the bank's forced sale then covers the debt),
+// stay put on triples, auction nothing from the Auction square.
+export const FORFEIT = {
+  preroll: () => ({ actions: [] }),
+  buy: () => ({ buy: false }),
+  bid: () => ({ bid: 0 }),
+  trade_response: () => ({ accept: false }),
+  reply: () => ({}),
+  raise_cash: () => ({ actions: [] }),
+  choose_space: () => ({ space: null }),
+  choose_property: () => ({ property: null }),
+};
 export const HOTEL = 5;
 export const SKYSCRAPER = 6;
 
@@ -67,7 +85,7 @@ export class Game {
       bankrupt: false,
       bankruptRound: null,
       passedGo: false,
-      stats: { rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0 },
+      stats: { rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0, forfeits: 0, turnMs: 0, turnsTimed: 0 },
     }));
     if (this.config.shuffleOrder) this.shuffle(this.players);
     this.props = {};
@@ -186,27 +204,38 @@ export class Game {
   }
 
   // ---------- decisions ----------
+  // A seat played by the heuristics: every seat of a game with no decider, and a seat configured as the bot.
+  isBot(p) { return !this.decider || (p.meta && p.meta.provider === 'heuristic'); }
+  // One answer from a player. The decider answers for the AI (or says why it could not: `__forfeit` and
+  // `__error`, or a throw); an answer that is missing, unreadable or against the rules forfeits the choice.
   async decide(p, type, ctx) {
-    let result = null;
-    let source = 'heuristic';
-    if (this.decider) {
-      try {
-        result = await this.decider.decide({ game: this, player: p, type, ctx });
-        if (result && typeof result === 'object') source = result.__source || 'ai';
-      } catch (e) {
-        this.log('decider_error', { player: p.id, decision: type, error: String(e && e.message || e) });
-        result = null;
-      }
+    if (!this.decider) return { ...heuristicDecide(this, p, type, ctx), __source: 'heuristic' };
+    // A game being stopped asks nobody more: the rest of its last turn takes every choice as a forfeit would, without
+    // counting a forfeit against a player whose call the stop cut short.
+    const halted = () => ({ ...(FORFEIT[type] || (() => ({})))(ctx), __source: 'forfeit', reason: 'the game was stopped' });
+    if (this.stopped) return halted();
+    let result = null, failure = null;
+    try {
+      result = await this.decider.decide({ game: this, player: p, type, ctx });
+    } catch (e) {
+      failure = { kind: 'error', reason: String((e && e.message) || e) };
     }
-    const check = this.validate(p, type, ctx, result);
-    if (!check.ok) {
-      if (result) this.log('illegal_decision', { player: p.id, decision: type, reason: check.reason, given: result });
-      p.stats.fallbacks++;
-      result = heuristicDecide(this, p, type, ctx);
-      source = 'heuristic-fallback';
+    if (this.stopped) return halted();
+    const call = result && result.__call != null ? result.__call : null;
+    if (!failure && result && result.__forfeit) failure = { kind: result.__forfeit, reason: result.__error || result.__forfeit };
+    if (!failure && (!result || typeof result !== 'object')) failure = { kind: 'none', reason: 'no answer' };
+    if (!failure) {
+      const check = this.validate(p, type, ctx, result);
+      if (!check.ok) failure = { kind: 'invalid', reason: check.reason, given: Object.fromEntries(Object.entries(result).filter(([k]) => !k.startsWith('__'))) };
+    }
+    if (failure) {
+      const reason = String(failure.reason).slice(0, 300);
+      p.stats.forfeits++;
+      this.log('forfeit', { player: p.id, decision: type, kind: failure.kind, reason, ...(failure.given ? { given: failure.given } : {}), ...(call != null ? { call } : {}) });
+      return { ...(FORFEIT[type] || (() => ({})))(ctx), __source: 'forfeit', reason: `no valid answer (${reason})` };
     }
     await this.handleTalk(p, result, type !== 'reply');
-    return { ...result, __source: source };
+    return { ...result, __source: result.__source || 'ai' };
   }
 
   // ---------- table talk ----------
@@ -299,8 +328,18 @@ export class Game {
     return this.result;
   }
 
+  // A turn, timed from its start to its end: the player's own questions, the answers it waits on from the others
+  // (trades, replies, bids) and everything the engine does. The time is logged as `turn_end`.
   async playTurn(p) {
     if (this.config.turnDelayMs > 0) await new Promise((r) => setTimeout(r, this.config.turnDelayMs));
+    const t0 = Date.now();
+    await this.playTurnBody(p);
+    const ms = Date.now() - t0;
+    p.stats.turnMs += ms;
+    p.stats.turnsTimed++;
+    this.log('turn_end', { player: p.id, ms });
+  }
+  async playTurnBody(p) {
     this.turn++;
     this.log('turn_start', { player: p.id, cash: p.cash, pos: p.pos, inJail: p.inJail });
     const pre = await this.prerollPhase(p);
@@ -353,7 +392,7 @@ export class Game {
     const mode = this.config.aiPreroll;
     let r;
     if (mode === 'never' || (mode === 'useful' && !useful)) {
-      r = heuristicDecide(this, p, 'preroll', ctx);
+      r = this.isBot(p) ? heuristicDecide(this, p, 'preroll', ctx) : { actions: [] }; // not asked: nothing done before the roll
     } else {
       r = await this.decide(p, 'preroll', ctx);
     }
@@ -629,6 +668,7 @@ export class Game {
     const options = Object.keys(this.props).map(Number).filter((i) => this.props[i].owner === null).map((i) => ({ i, name: this.board[i].name, price: this.board[i].price, group: this.board[i].group }));
     if (!options.length) { this.log('auction_square', { player: p.id, result: 'no unowned property' }); return; }
     const r = await this.decide(p, 'choose_property', { purpose: 'auction_square', options });
+    if (r.__source === 'forfeit') { this.log('auction_square', { player: p.id, result: 'no valid answer', reason: r.reason }); return; } // nothing auctioned
     const i = Number(r.property);
     this.log('auction_square', { player: p.id, chosen: i, name: this.board[i].name, source: r.__source, reason: r.reason });
     await this.auction(this.board[i]);
@@ -667,6 +707,7 @@ export class Game {
   async triples(p) {
     const options = this.board.filter((s) => s.type !== 'gotojail').map((s) => ({ i: s.i, name: s.name, type: s.type, owner: this.props[s.i] ? this.props[s.i].owner : null, price: s.price || null }));
     const r = await this.decide(p, 'choose_space', { purpose: 'triples', options, from: p.pos });
+    if (r.__source === 'forfeit') { this.log('triples', { player: p.id, to: null, name: null, source: r.__source, reason: r.reason }); return; } // stays put
     const i = Number(r.space);
     this.log('triples', { player: p.id, to: i, name: this.sqName(i), source: r.__source, reason: r.reason });
     await this.moveTo(p, i, true, { via: 'triples' });
@@ -678,7 +719,7 @@ export class Game {
     let c = choice;
     if (c === 'card' && p.jailCards <= 0) c = null;
     if (c === 'pay' && p.cash < this.config.jailFine) c = null;
-    if (!c) c = heuristicDecide(this, p, 'jail', { cash: p.cash, jailCards: p.jailCards, jailTurns: p.jailTurns }).jail;
+    if (!c) c = this.isBot(p) ? heuristicDecide(this, p, 'jail', { cash: p.cash, jailCards: p.jailCards, jailTurns: p.jailTurns }).jail : 'roll'; // no choice made: roll for doubles
     if (c === 'card' && p.jailCards > 0) {
       p.jailCards--;
       this.returnJailCard();
@@ -791,24 +832,27 @@ export class Game {
     this.log('raise_cash', { player: p.id, needed: amount, cash: p.cash, reason });
     let c = ctx();
     if (!c.canSell.length && !c.canMortgage.length) return;
-    let r;
-    if (this.config.aiRaiseCash) r = await this.decide(p, 'raise_cash', c);
-    else r = heuristicDecide(this, p, 'raise_cash', c);
+    let r = { actions: [] };
+    if (this.config.aiRaiseCash || this.isBot(p)) r = await this.decide(p, 'raise_cash', c);
     for (const a of (r.actions || []).slice(0, 40)) {
       if (p.cash >= amount) break;
       if (!a || typeof a !== 'object') continue;
       this.applyAction(p, a);
     }
-    // Heuristic completion if the model's plan fell short.
-    let guard = 0;
-    while (p.cash < amount && guard++ < 60) {
-      c = ctx();
-      if (!c.canSell.length && !c.canMortgage.length) break;
-      const h = heuristicDecide(this, p, 'raise_cash', c);
-      if (!h.actions.length) break;
-      const before = p.cash;
-      for (const a of h.actions) { if (p.cash >= amount) break; this.applyAction(p, a); }
-      if (p.cash === before) break;
+    if (p.cash < amount) this.forcedSale(p, amount, reason);
+  }
+  // The bank's forced sale, when a debt is still more than the player's cash after its own plan (or it gave none):
+  // a mortgage at a time, then a building at a time, each the first in board order that the rules allow, until the
+  // debt is covered or there is nothing left to sell. Mechanical, the same order for everyone: no strategy.
+  forcedSale(p, amount, reason) {
+    this.log('forced_sale', { player: p.id, needed: amount, cash: p.cash, reason });
+    for (let guard = 0; p.cash < amount && guard < 200; guard++) {
+      const owned = this.ownedBy(p);
+      const m = owned.find((i) => this.canMortgage(p, i).ok);
+      if (m != null) { this.mortgage(p, m); continue; }
+      const s = owned.find((i) => this.canSell(p, i).ok);
+      if (s != null) { this.sell(p, s); continue; }
+      break;
     }
   }
 

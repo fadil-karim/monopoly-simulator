@@ -1,9 +1,0 @@
-ok, get me an ai breakdown
-
-i want to see when they are prompted and what they are prompted with
-
-as in, are they prompted on every turn? on every movement etc
-
-what are they given for the game? a json file, image, etc?
-
-give me a text and diagrammatic md file

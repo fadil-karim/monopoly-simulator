@@ -1,7 +1,8 @@
 // The AI decider: turns an engine decision request into a prompt, calls the
 // player's model, parses the JSON reply, and records everything for analytics.
-// Any failure (network, invalid JSON, timeout) falls back to the heuristics so a
-// game always finishes.
+// A call that fails, a reply that is not JSON and an empty one are reported to
+// the engine (`__forfeit`, `__error`), which forfeits that choice: nothing plays
+// for the model. Every answer carries the number of its call record (`__call`).
 
 import { callModel, PROVIDERS } from './providers.js';
 import { heuristicDecide } from './heuristics.js';
@@ -188,20 +189,18 @@ export class AIDecider {
       const empty = parsed && typeof parsed === 'object' && !Object.keys(parsed).length;
       if (!parsed || empty) {
         rec.error = empty ? 'empty reply' : 'unparseable response';
-        rec.fallback = true;
+        rec.fallback = true; // the answer could not be used, and the engine forfeits the choice
         game.llmCalls.push(rec); game.onLlm(rec, game);
-        game.log('ai_fallback', { player: p.id, decision: type, reason: rec.error });
-        return { ...heuristicDecide(game, p, type, ctx), __source: 'heuristic-fallback', reason: `fallback: ${empty ? 'empty' : 'unparseable'} reply` };
+        return { __forfeit: empty ? 'empty' : 'unparseable', __error: rec.error, __call: rec.seq };
       }
       game.llmCalls.push(rec); game.onLlm(rec, game);
-      return { ...parsed, __source: 'ai' };
+      return { ...parsed, __source: 'ai', __call: rec.seq };
     } catch (e) {
       rec.latencyMs = Date.now() - rec.startedAt;
       rec.error = String(e && e.message || e);
       rec.fallback = true;
       game.llmCalls.push(rec); game.onLlm(rec, game);
-      game.log('ai_fallback', { player: p.id, decision: type, reason: rec.error });
-      return { ...heuristicDecide(game, p, type, ctx), __source: 'heuristic-fallback', reason: `fallback: ${rec.error.slice(0, 120)}` };
+      return { __forfeit: 'error', __error: rec.error.slice(0, 300), __call: rec.seq };
     }
   }
 }

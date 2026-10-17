@@ -4,6 +4,25 @@
 // and fmtMoney; a bare engine game reads as London in pounds.
 function nm(game, id) { const p = game.player(id); return p ? p.name : id; }
 
+// A duration as people say it: 850 ms, 42 s, 3 min 5 s.
+export function fmtDuration(ms) {
+  if (ms == null || !Number.isFinite(ms)) return '';
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ''}`;
+}
+// What a forfeited choice came to, for the line that reports it.
+const FORFEITED = {
+  preroll: 'it does nothing before the roll', buy: 'it does not buy', bid: 'it bids nothing', trade_response: 'the offer is rejected',
+  reply: 'it says nothing', raise_cash: "the bank's forced sale settles the debt", choose_space: 'it stays put', choose_property: 'nothing is auctioned',
+};
+const FORFEIT_KINDS = { error: 'the call failed', none: 'no answer', empty: 'an empty answer', unparseable: 'no JSON in the answer', invalid: 'an answer against the rules' };
+// The question a forfeit was the answer to.
+const QUESTION = {
+  preroll: 'its question before the roll', buy: 'the offer to buy', bid: 'the auction', trade_response: 'the trade offer', reply: 'the table talk',
+  raise_cash: 'what to sell to pay', choose_space: 'where to go on triples', choose_property: 'what to auction',
+};
+
 export function fmtEvent(e, game) {
   const P = (id) => nm(game, id);
   const S = (i) => (i == null ? '' : game.sqName(i));
@@ -56,10 +75,13 @@ export function fmtEvent(e, game) {
     case 'bus_ticket_taken': return `takes a bus ticket (${e.via})`;
     case 'bus_ticket_used': return `uses a bus ticket to move to ${S(e.to)}`;
     case 'bus_ticket_none': return 'no bus tickets left';
-    case 'triples': return `TRIPLES: chooses ${S(e.to)}${e.reason ? ' — ' + T(e.reason) : ''}`;
-    case 'auction_square': return e.result ? 'Auction square: nothing to auction' : `Auction square: puts ${e.chosen != null ? S(e.chosen) : N(e.name)} up for auction`;
+    case 'triples': return e.to == null ? 'TRIPLES, but no square chosen: stays put' : `TRIPLES: chooses ${S(e.to)}${e.reason ? ' — ' + T(e.reason) : ''}`;
+    case 'auction_square': return e.result === 'no valid answer' ? 'Auction square, but no property chosen: nothing auctioned' : e.result ? 'Auction square: nothing to auction' : `Auction square: puts ${e.chosen != null ? S(e.chosen) : N(e.name)} up for auction`;
     case 'birthday_gift': return `Birthday Gift: ${M(e.amount)}`;
     case 'three_doubles': return `three doubles in a row!`;
+    case 'forfeit': return `gives no valid answer to ${QUESTION[e.decision] || String(e.decision).replace(/_/g, ' ')} (${FORFEIT_KINDS[e.kind] || e.kind}: ${T(String(e.reason))}), so ${FORFEITED[e.decision] || 'the choice is forfeited'}`;
+    case 'forced_sale': return `the bank's forced sale: owes ${M(e.needed)} with ${M(e.cash)} in hand`;
+    case 'turn_end': return `finishes its turn in ${fmtDuration(e.ms)}`;
     case 'illegal_decision': return `(model gave an illegal ${e.decision} decision: ${T(e.reason)}; using fallback)`;
     case 'illegal_action': return `(illegal action ignored: ${T(e.reason)})`;
     case 'ai_fallback': return `(model call failed for ${e.decision}: ${e.reason}; heuristic used)`;
@@ -80,7 +102,7 @@ export function eventLine(e, game, round) {
   return `[r${e.type === 'trade_counter' && e.negotiationRound == null && round != null ? round : e.round}] ${who}${fmtEvent(e, game)}`;
 }
 
-const NOISE = new Set(['roll', 'move', 'turn_start', 'buy_decision', 'rent_due', 'auction_start', 'auction_bids', 'raise_cash', 'jail_stay', 'illegal_action', 'rent_skipped', 'bus_ticket_none']);
+const NOISE = new Set(['roll', 'move', 'turn_start', 'turn_end', 'buy_decision', 'rent_due', 'auction_start', 'auction_bids', 'raise_cash', 'jail_stay', 'illegal_action', 'rent_skipped', 'bus_ticket_none']);
 
 // A plain-text account of a game for a reader or a model: the players, then
 // one line per event. `compact` drops the dice, moves and other noise;

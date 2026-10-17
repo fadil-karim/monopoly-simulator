@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-// Proves the replay reducer mirrors the engine: runs heuristic games and, after
-// every event, compares the state rebuilt from the log with the engine's own.
+// Proves the replay reducer mirrors the engine: runs games and, after every event, compares the state rebuilt from
+// the log with the engine's own. Even games are the rule-based bot's alone; odd ones are played by the scripted
+// traders answering badly a seventh of the time, so every kind of forfeit, the bank's forced sale and the trades
+// rejected for want of an answer go through the reducer too.
 //   node scripts/check-replay.mjs [games] [edition]
 import { Game } from '../public/assets/app/engine.js';
 import { ReplayGame } from '../public/assets/app/replay.js';
 import { transcript } from '../public/assets/app/transcript.js';
+import { traders } from './traders.mjs';
 
 const games = Number(process.argv[2] || 30);
 const edition = process.argv[3] || 'standard';
-const STAT_KEYS = ['rentPaid', 'rentCollected', 'bought', 'auctionsWon', 'trades', 'jail', 'housesBuilt', 'messages'];
+const STAT_KEYS = ['rentPaid', 'rentCollected', 'bought', 'auctionsWon', 'trades', 'jail', 'housesBuilt', 'messages', 'forfeits', 'turnMs', 'turnsTimed'];
 let compared = 0, events = 0;
+const forfeits = {}, kinds = {};
 
 function diff(game, rep, e) {
   const out = [];
@@ -52,7 +56,7 @@ for (let g = 0; g < games; g++) {
     id: `r${g}`, seed: 1000 + g,
     config: { edition, maxRounds: 120, aiPreroll: 'always', freeParkingJackpot: g % 2 === 1 },
     players: [{ id: 'a', name: 'Alpha', colour: '#111' }, { id: 'b', name: 'Bravo' }, { id: 'c', name: 'Charlie' }, { id: 'd', name: 'Delta' }],
-    decider: null,
+    decider: g % 2 ? traders(3000 + g, { flaky: 1 / 7 }) : null,
     onEvent: (e, gm) => {
       if (!fromMeta) {
         fromMeta = new ReplayGame({ id: gm.id, edition: gm.edition, config: gm.config, seed: gm.seed, players: gm.players.map((p) => ({ ...p.meta, id: p.id, name: p.name })) });
@@ -79,10 +83,16 @@ for (let g = 0; g < games; g++) {
     }
     if (rep.chat.length !== game.chat.length) throw new Error(`game ${g}: chat length`);
   }
+  for (const e of game.events) if (e.type === 'forfeit') { forfeits[e.decision] = (forfeits[e.decision] || 0) + 1; kinds[e.kind] = (kinds[e.kind] || 0) + 1; }
+  if (game.events.some((e) => e.type === 'forfeit' && e.decision === 'trade_response') && !game.events.some((e) => e.type === 'trade_response' && e.source === 'forfeit' && e.accept === false && /no valid answer/.test(e.reason))) throw new Error(`game ${g}: a forfeited trade response was not logged as a rejection with its reason`);
+  const turns = game.events.filter((e) => e.type === 'turn_start').length, ends = game.events.filter((e) => e.type === 'turn_end').length;
+  if (turns !== ends) throw new Error(`game ${g}: ${turns} turns began but ${ends} ended`);
   if (g === 0) {
     const t = transcript(fromMeta, { compact: true, maxChars: 4000 });
     if (!/Result: /.test(t) || !/left out/.test(t)) throw new Error('transcript shape');
     console.log(t.slice(0, 600) + '\n...');
   }
 }
-console.log({ edition, games, events, compared, ok: true });
+for (const k of ['error', 'none', 'empty', 'invalid']) if (!kinds[k]) throw new Error(`no ${k} forfeit: the check did not cover it`);
+for (const d of ['preroll', 'buy', 'bid', 'trade_response']) if (!forfeits[d]) throw new Error(`no forfeited ${d}: the check did not cover it`);
+console.log({ edition, games, events, compared, forfeits, kinds, ok: true });

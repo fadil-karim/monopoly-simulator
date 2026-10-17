@@ -106,13 +106,14 @@ seen.length = 0;
 const r6 = await pplx('sse/cut');
 must(seen.length === 2 && r6.text.includes('"buy"') && r6.cost === 0.0005, 'a stream cut mid-reply is asked again, and the whole reply kept with its cost');
 
-// A reply of "{}" is no answer: the decision falls to the bot and says why, rather than passing as "nothing to do".
+// A reply of "{}" is no answer: the choice is forfeited and the forfeit says why, rather than passing as "nothing to
+// do" or being played by the bot.
 seen.length = 0;
 const decider = new AIDecider({ grok: { provider: 'perplexity', model: 'empty/model', effort: 'high' } }, { keys: { perplexity: 'k' }, baseUrls: { perplexity: base }, timeoutMs: 5000 });
 const game = new Game({ id: 'empty', seed: 1, config: { shuffleOrder: false }, players: [{ id: 'grok', name: 'Grok', provider: 'perplexity', model: 'empty/model' }, { id: 'bot', name: 'Bot', provider: 'heuristic' }], decider });
 const pre = await game.decide(game.players[0], 'preroll', game.prerollContext(game.players[0]));
-const fell = game.events.find((e) => e.type === 'ai_fallback');
-must(pre.__source === 'heuristic-fallback' && fell && fell.reason === 'empty reply' && game.llmCalls[0].error === 'empty reply', 'an empty reply "{}" before a roll is a fallback, recorded as an empty reply');
+const fell = game.events.find((e) => e.type === 'forfeit');
+must(pre.__source === 'forfeit' && Array.isArray(pre.actions) && !pre.actions.length && fell && fell.kind === 'empty' && fell.reason === 'empty reply' && fell.call === game.llmCalls[0].seq && game.llmCalls[0].error === 'empty reply' && game.players[0].stats.forfeits === 1, 'an empty reply "{}" before a roll forfeits the choice: nothing done, the forfeit logged with its reason and its call');
 
 // A rate limit that says how long to wait (Retry-After) is waited out for that long, not the default.
 seen.length = 0;
