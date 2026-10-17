@@ -58,12 +58,22 @@
   td.modelcell { min-width: 18em; width: 38%; }
   td select.provider { min-width: 12.5em; }
   td select.effort { min-width: 6.5em; }
+  nav.site { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 14px; font-weight: 600; }
+  nav.site a { color: var(--ink); text-decoration: none; border-bottom: 2px solid var(--red); }
+  iframe.table { width: 100%; height: 900px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); display: block; }
 </style>
 </head>
 <body>
 <header>
   <span class="logo">MONOPOLY</span>
   <h1>Simulator dashboard <span id="where" style="color:var(--muted);font-weight:400"></span></h1>
+  <nav class="site" title="This machine's copy of the site, read from the store">
+    <a href="/monopoly/#live" target="_blank" rel="noopener">The table</a>
+    <a href="/monopoly/#games" target="_blank" rel="noopener">Every game</a>
+    <a href="/monopoly/#stats" target="_blank" rel="noopener">Statistics</a>
+    <a href="/monopoly/#models" target="_blank" rel="noopener">Model stats</a>
+    <a href="/home/" target="_blank" rel="noopener">The players</a>
+  </nav>
   <div class="status"><span id="games" class="hint"></span><span id="pill" class="pill">idle</span></div>
 </header>
 <main>
@@ -123,13 +133,20 @@
       <button type="button" id="save">Save</button>
       <button type="button" id="start" class="primary">Start</button>
       <button type="button" id="probe" title="Ask every model in the pool one real decision, as a game would, and say which seats answer">Check the seats</button>
+      <button type="button" id="cpu" title="Eight rule-based players: no keys, kept on this machine and never sent to a site, batch after batch, 300 ms a turn so you can watch (the pause box above overrides it)">Run 8 CPU players</button>
       <button type="button" id="finish" disabled title="Play the games in play to the end, then stop">Stop after this game</button>
       <button type="button" id="stop" disabled title="End the games in play after the current turn, kept as stopped">Stop now</button>
-      <a id="live" href="#" target="_blank" rel="noopener">Open the site's Live tab</a>
+      <a id="live" href="#" target="_blank" rel="noopener">Open the public site's Live tab</a>
       <span id="msg" class="note"></span>
     </div>
     <pre id="log" class="log">Nothing running.</pre>
-    <p class="hint">Save writes the table to <span id="savesto">config.json</span>, which the runner prefers from then on; Start saves and runs. Check the seats saves and asks every model in the pool one decision, as a game would, to show which answer and which would forfeit their decisions, for a few cents and without touching the site. Stop after this game plays the games in play to the end and starts no more; Stop now ends them after the current turn and keeps them in the store as stopped. Either way the site is sent what it has not got before the runner stops.</p>
+    <p class="hint">Save writes the table to <span id="savesto">config.json</span>, which the runner prefers from then on; Start saves and runs. Check the seats saves and asks every model in the pool one decision, as a game would, to show which answer and which would forfeit their decisions, for a few cents and without touching the site. Stop after this game plays the games in play to the end and starts no more; Stop now ends them after the current turn and keeps them in the store as stopped. Either way the site is sent what it has not got before the runner stops. Run 8 CPU players plays the CPU table, eight rule-based players with no keys, batch after batch on this machine alone, without touching the table above or the site.</p>
+  </section>
+
+  <section>
+    <h2>The table, live</h2>
+    <iframe id="table" class="table" src="/monopoly/#live" title="The table, live, from this machine's store"></iframe>
+    <p class="hint">This machine's copy of the site, the same pages as the web version, read from the store: the game being played here, live, else the latest one, with every game, the replays and the statistics a tab away (and in the links at the top). It shows every game in the store, the CPU table's and the dry runs' included, and needs neither the site nor the network.</p>
   </section>
 
   <section>
@@ -299,7 +316,7 @@ function renderRun() {
   $('#pill').textContent = task === 'probe' ? 'checking' : task === 'publish' ? 'sending' : S.running ? 'running' : 'idle';
   $('#pill').classList.toggle('on', S.running);
   $('#start').disabled = S.running; $('#probe').disabled = S.running; $('#stop').disabled = !S.running;
-  $('#finish').disabled = task !== 'play'; $('#publish').disabled = S.running; $('#republish').disabled = S.running;
+  $('#finish').disabled = task !== 'play'; $('#publish').disabled = S.running; $('#republish').disabled = S.running; $('#cpu').disabled = S.running;
   renderStore();
   $('#games').textContent = S.startedAt ? `${S.games} game${S.games === 1 ? '' : 's'} finished this run` : '';
   const log = $('#log');
@@ -363,8 +380,14 @@ $('#save').addEventListener('click', async () => {
   catch (err) { $('#msg').textContent = `Save failed: ${err.message}`; }
 });
 $('#start').addEventListener('click', async () => {
-  try { const g = gather(); await api('/api/start', g); $('#msg').textContent = 'Runner started.'; await refresh(false); }
+  try { const g = gather(); await api('/api/start', g); $('#msg').textContent = 'Runner started.'; await refresh(false); watchNew(); }
   catch (err) { $('#msg').textContent = `Start failed: ${err.message}`; }
+});
+// The table on the page looks for the new game at once rather than at its next check.
+const watchNew = () => setTimeout(() => { try { $('#table').contentWindow.location.reload(); } catch {} }, 2000);
+$('#cpu').addEventListener('click', async () => {
+  try { await api('/api/start', { options: { table: 'cpu', delay: Number($('#delay').value) || 0 } }); $('#msg').textContent = 'Eight CPU players at the table, on this machine alone: watch them below.'; await refresh(false); watchNew(); }
+  catch (err) { $('#msg').textContent = `The CPU table failed to start: ${err.message}`; }
 });
 $('#probe').addEventListener('click', async () => {
   try { const g = gather(); g.options = { probe: true }; await api('/api/start', g); $('#msg').textContent = 'Checking the seats: one decision for every model in the pool.'; await refresh(false); }

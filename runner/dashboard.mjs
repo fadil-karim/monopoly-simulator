@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // The local dashboard: a page to fill in the site, the runner token, the keys and the pool of models, to start, watch
-// and stop the simulator, and to see what its store holds and send the site what it lacks. It binds to 127.0.0.1
+// and stop the simulator, and to see what its store holds and send the site what it lacks; beside it, the site's own
+// pages read from the store (local-site.mjs: /monopoly/ and /home/), so the games played here are watched live as on
+// the web version, the eight CPU players' among them. It binds to 127.0.0.1
 // (DASHBOARD_HOST, or --host, to bind elsewhere: the container binds every address and publishes the port on the
 // host's loopback only); with DASHBOARD_PASSWORD set it asks for that password. The keys stay in memory for the runner
 // it starts unless "remember" writes them to the data folder's .env; the table is written to its config.json, which
@@ -17,6 +19,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { PROVIDERS, EFFORTS, listModels } from '../public/assets/app/providers.js';
 import { PRICES, modelName } from '../public/assets/app/pricing.js';
 import { GameStore } from './store.mjs';
+import { localSite } from './local-site.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = {};
@@ -34,6 +37,8 @@ const DATA = resolve(typeof args.data === 'string' ? args.data : process.env.MON
 const CONFIG = join(DATA, 'config.json'), DEFAULT = join(here, 'config.default.json'), ENV = join(DATA, '.env');
 const show = (f) => { const r = relative(join(here, '..'), f); return r && !r.startsWith('..') ? r : f; };
 const store = new GameStore(join(DATA, 'games'));
+// The CPU table: eight rule-based players, played and kept on this machine (Run 8 CPU players).
+const CPU = join(here, 'config.cpu.json');
 const KEY_NAMES = [...new Set(Object.values(PROVIDERS).map((p) => p.env).filter(Boolean))];
 
 function readEnvFile() {
@@ -72,7 +77,9 @@ function knownModels(id, p) {
 const defaultSite = () => { try { return JSON.parse(readFileSync(DEFAULT, 'utf8')).site || ''; } catch { return ''; } };
 
 // ---------- the runner as a child process ----------
-const state = { child: null, task: null, log: [], startedAt: null, games: 0, exit: null };
+// table: the players of the table the runner last played, the pool the site's homepage lists, as the runner reports
+// its pool to the web version
+const state = { child: null, task: null, log: [], startedAt: null, games: 0, exit: null, table: null };
 function push(line) {
   if (!line) return;
   state.log.push(line);
@@ -84,20 +91,23 @@ function start(body) {
   if (body.config) writeFileSync(CONFIG, JSON.stringify(body.config, null, 2) + '\n');
   if (body.remember) writeEnvFile(body.env || {});
   const o = body.options || {};
-  const flags = ['--data', DATA, '--config', configFile()];
-  if (o.loop) flags.push('--loop');
-  if (o.dry) flags.push('--dry');
+  // the CPU table plays from its own file, batch after batch, and is never sent to a site
+  const cpu = o.table === 'cpu';
+  const flags = ['--data', DATA, '--config', cpu ? CPU : configFile()];
+  if (o.loop || cpu) flags.push('--loop');
+  if (o.dry || cpu) flags.push('--dry');
   if (o.games) flags.push('--games', String(o.games));
   if (o.seats) flags.push('--seats', String(o.seats));
   if (o.edition) flags.push('--edition', String(o.edition));
   if (o.maxRounds) flags.push('--max-rounds', String(o.maxRounds));
-  if (o.delay) flags.push('--delay', String(o.delay));
+  if (o.delay) flags.push('--delay', String(o.delay)); // else the table's own (the CPU table waits 300 ms a turn)
   if (o.probe) flags.push('--probe'); // one decision for every model in the pool, then the runner stops
   if (o.publish) flags.push(o.publish === 'again' ? '--republish' : '--publish'); // the store to the site, then the runner stops
   const env = { ...process.env, MONOPOLY_DASHBOARD: '1' }; // so the runner can say a token came from the token box
   for (const [k, v] of Object.entries(body.env || {})) if (v) env[k] = String(v);
   const child = spawn(process.execPath, [join(here, 'run.mjs'), ...flags], { env, cwd: join(here, '..') });
   Object.assign(state, { child, task: o.probe ? 'probe' : o.publish ? 'publish' : 'play', log: [], startedAt: Date.now(), games: 0, exit: null });
+  if (state.task === 'play') { try { state.table = JSON.parse(readFileSync(flags[3], 'utf8')).players || null; } catch { /* the saved table stands */ } }
   push(`started: node runner/run.mjs ${flags.join(' ')}`);
   const buf = { out: '', err: '' };
   const feed = (which, chunk) => {
@@ -153,6 +163,8 @@ function allowed(req) {
   const a = Buffer.from(given), b = Buffer.from(PASSWORD);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+// The site's pages and reads, from the store; the homepage lists the table in use as the players.
+const site = localSite({ store, publicDir: join(here, '..', 'public'), pool: () => state.table || readConfig().players || [] });
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (!allowed(req)) { res.writeHead(401, { 'www-authenticate': 'Basic realm="Monopoly AI simulator", charset="UTF-8"', 'content-type': 'text/plain' }); return res.end('the dashboard password, please'); }
@@ -185,6 +197,7 @@ const server = http.createServer(async (req, res) => {
       try { return json(res, 200, { models: await listModels(body.provider, body.key || '', body.baseUrl || undefined) }); }
       catch (e) { return json(res, 502, { error: e.message }); }
     }
+    if (site(req, res, url)) return;
     json(res, 404, { error: 'no such route' });
   } catch (e) { json(res, 500, { error: e.message }); }
 });
