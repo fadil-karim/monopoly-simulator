@@ -7,7 +7,7 @@
 import { makeBoard, EDITION_INFO } from './board.js';
 import { DEFAULT_CONFIG } from './engine.js';
 
-const STATS = () => ({ rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0, forfeits: 0, turnMs: 0, turnsTimed: 0 });
+const STATS = () => ({ rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0, forfeits: 0, answerMs: 0, answers: 0 });
 
 export class ReplayGame {
   // meta: { id, edition, config, seed, startedAt, players: [{ id, name, provider, model, effort, colour, ... }] } in seat order.
@@ -143,7 +143,7 @@ export class ReplayGame {
       case 'bus_ticket_used': { const p = P(e.player); if (p) p.busTickets = Math.max(0, p.busTickets - 1); break; }
       case 'illegal_decision': case 'decider_error': { const p = P(e.player); if (p) p.stats.fallbacks++; break; } // games played before v2.0, when the bot stood in
       case 'forfeit': { const p = P(e.player); if (p) p.stats.forfeits++; break; }
-      case 'turn_end': { const p = P(e.player); if (p && e.ms != null) { p.stats.turnMs += e.ms; p.stats.turnsTimed++; } break; }
+      case 'answer_time': { const p = P(e.player); if (p) { p.stats.answerMs += e.ms || 0; p.stats.answers++; } break; } // a turn_end, of the first v2.0 games, changes nothing
       case 'game_end': {
         const { seq, t, round, turn, type, ...result } = e;
         this.result = result;

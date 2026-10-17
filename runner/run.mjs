@@ -34,7 +34,7 @@ import { GameStore, Publisher } from './store.mjs';
 // EHOSTUNREACH …"). Each attempt now gets two and a half seconds.
 if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === 'function') net.setDefaultAutoSelectFamilyAttemptTimeout(2500);
 
-const VERSION = '2.0';
+const VERSION = '2.1';
 const here = dirname(fileURLToPath(import.meta.url));
 // A path as the owner would type it: from the repository when it is inside it, else whole.
 const show = (f) => { const r = relative(join(here, '..'), f); return r && !r.startsWith('..') ? r : f; };
@@ -188,7 +188,8 @@ function finishPayload(game, result) {
         income: { total: ps.made.total, rentTotal: ps.made.rentTotal, go: ps.made.go, bank: ps.made.bank, players: ps.made.players, rent: ps.made.rent, paidTotal: ps.paid.total, paidBank: ps.paid.bank, paidPlayers: ps.paid.players },
         rolls: ps.rolls, rollCount: ps.rollCount, turns: ps.turns, bought: ps.bought, auctions: ps.auctions, trades: ps.trades,
         properties: game.ownedBy(p), calls, forfeits: ff,
-        time: { turns: ps.turnsTimed, ms: ps.turnMs, avgMs: ps.turnsTimed ? Math.round(ps.turnMs / ps.turnsTimed) : null, longestMs: ps.longestTurnMs },
+        // how long the table waited for its answers: how many, in all, on average and the longest
+        answerTime: { answers: ps.answers, ms: ps.answerMs, avgMs: ps.answers ? Math.round(ps.answerMs / ps.answers) : null, longestMs: ps.longestAnswerMs },
       },
     };
   });
@@ -214,7 +215,7 @@ function finishPayload(game, result) {
     winner: winner ? { id: winner.id, name: winner.name, netWorth: winner.bankrupt ? 0 : game.netWorth(winner), cash: winner.cash } : null,
     props,
     forfeits: m.forfeits,
-    time: { turns: m.turnsTimed, avgMs: m.turnsTimed ? Math.round(m.turnMs / m.turnsTimed) : null, longestMs: Math.max(0, ...playersOut.map((q) => q.stats.time.longestMs || 0)) },
+    answerTime: { answers: m.answers, ms: m.answerMs, avgMs: m.answers ? Math.round(m.answerMs / m.answers) : null, longestMs: Math.max(0, ...playersOut.map((q) => q.stats.answerTime.longestMs || 0)) },
     cost: { players: Math.round(playersOut.reduce((a, q) => a + q.stats.calls.cost, 0) * 1e8) / 1e8, narrator: null, total: null, unpriced: playersOut.reduce((a, q) => a + q.stats.calls.unpriced, 0) },
   };
   summary.cost.total = summary.cost.players;
@@ -456,7 +457,7 @@ async function runBatch(batchNo) {
       } else {
         const payload = finishPayload(game, result);
         game.payload = payload; // kept as it is, without the report, should the simulator have to go before the narrator answers
-        console.log(`■ ${game.id}: ${result.winnerName} wins after ${result.rounds} rounds (${result.endReason}); ${game.llmCalls.length} calls, ${plural(payload.summary.forfeits, 'forfeit')}, ${usd(payload.summary.cost.players)}, ${secs(payload.summary.time.avgMs)} a turn`);
+        console.log(`■ ${game.id}: ${result.winnerName} wins after ${result.rounds} rounds (${result.endReason}); ${game.llmCalls.length} calls, ${plural(payload.summary.forfeits, 'forfeit')}, ${usd(payload.summary.cost.players)}${payload.summary.answerTime.answers ? `, ${secs(payload.summary.answerTime.avgMs)} an answer` : ''}`);
         const recap = await writeRecap(game);
         payload.recap = recap ? recap.text : null;
         if (recap) {

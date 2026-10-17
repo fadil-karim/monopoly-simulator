@@ -43,15 +43,16 @@ export class StatsTracker {
     this.level = {}; this.depot = {};
     this.players = {};
     for (const p of game.players) this.players[p.id] = this.blankPlayer();
-    this.match = { turns: 0, rolls: hist(), rollCount: 0, bought: 0, auctions: 0, trades: 0, bankIn: 0, bankOut: 0, between: 0, rent: 0, go: 0, forfeits: 0, turnMs: 0, turnsTimed: 0 };
+    this.match = { turns: 0, rolls: hist(), rollCount: 0, bought: 0, auctions: 0, trades: 0, bankIn: 0, bankOut: 0, between: 0, rent: 0, go: 0, forfeits: 0, answerMs: 0, answers: 0 };
     this.payments = [];
     this.negotiations = [];
     this.open = null; // the negotiation under way
     this.card = null; // the text of the last card drawn this turn, so the payment it causes reads as the card's
   }
   blankPlayer() {
-    // forfeits: the choices given up for want of a valid answer, by question; turnMs and turnsTimed: the time of its own turns
-    return { rolls: hist(), rollCount: 0, turns: 0, made: { rent: {}, rentTotal: 0, go: 0, bank: 0, players: 0, total: 0 }, paid: { bank: 0, players: 0, total: 0 }, bought: 0, auctions: 0, trades: 0, forfeits: 0, forfeitsBy: {}, turnMs: 0, turnsTimed: 0, longestTurnMs: 0 };
+    // forfeits: the choices given up for want of a valid answer, by question; answerMs, answers and longestAnswerMs:
+    // how long the table waited for its answers
+    return { rolls: hist(), rollCount: 0, turns: 0, made: { rent: {}, rentTotal: 0, go: 0, bank: 0, players: 0, total: 0 }, paid: { bank: 0, players: 0, total: 0 }, bought: 0, auctions: 0, trades: 0, forfeits: 0, forfeitsBy: {}, answerMs: 0, answers: 0, longestAnswerMs: 0 };
   }
   player(id) { return this.players[id] || (this.players[id] = this.blankPlayer()); }
   // The deed's history of a property: what happened to it, newest last, the last forty kept.
@@ -121,7 +122,7 @@ export class StatsTracker {
     const m = this.match, r = e.round;
     switch (e.type) {
       case 'turn_start': m.turns++; this.player(e.player).turns++; this.card = null; break;
-      case 'turn_end': { if (e.ms == null) break; const q = this.player(e.player); q.turnMs += e.ms; q.turnsTimed++; q.longestTurnMs = Math.max(q.longestTurnMs, e.ms); m.turnMs += e.ms; m.turnsTimed++; break; }
+      case 'answer_time': { const q = this.player(e.player), ms = e.ms || 0; q.answerMs += ms; q.answers++; q.longestAnswerMs = Math.max(q.longestAnswerMs, ms); m.answerMs += ms; m.answers++; break; }
       case 'forfeit': { const q = this.player(e.player); q.forfeits++; q.forfeitsBy[e.decision] = (q.forfeitsBy[e.decision] || 0) + 1; m.forfeits++; break; }
       case 'roll': {
         if (e.purpose === 'utility card') break;

@@ -81,7 +81,8 @@ export function fmtEvent(e, game) {
     case 'three_doubles': return `three doubles in a row!`;
     case 'forfeit': return `gives no valid answer to ${QUESTION[e.decision] || String(e.decision).replace(/_/g, ' ')} (${FORFEIT_KINDS[e.kind] || e.kind}: ${T(String(e.reason))}), so ${FORFEITED[e.decision] || 'the choice is forfeited'}`;
     case 'forced_sale': return `the bank's forced sale: owes ${M(e.needed)} with ${M(e.cash)} in hand`;
-    case 'turn_end': return `finishes its turn in ${fmtDuration(e.ms)}`;
+    case 'answer_time': return `takes ${fmtDuration(e.ms)} to answer ${QUESTION[e.decision] || String(e.decision).replace(/_/g, ' ')}`;
+    case 'turn_end': return `finishes its turn in ${fmtDuration(e.ms)}`; // the first v2.0 games timed whole turns
     case 'illegal_decision': return `(model gave an illegal ${e.decision} decision: ${T(e.reason)}; using fallback)`;
     case 'illegal_action': return `(illegal action ignored: ${T(e.reason)})`;
     case 'ai_fallback': return `(model call failed for ${e.decision}: ${e.reason}; heuristic used)`;
@@ -102,7 +103,7 @@ export function eventLine(e, game, round) {
   return `[r${e.type === 'trade_counter' && e.negotiationRound == null && round != null ? round : e.round}] ${who}${fmtEvent(e, game)}`;
 }
 
-const NOISE = new Set(['roll', 'move', 'turn_start', 'turn_end', 'buy_decision', 'rent_due', 'auction_start', 'auction_bids', 'raise_cash', 'jail_stay', 'illegal_action', 'rent_skipped', 'bus_ticket_none']);
+const NOISE = new Set(['roll', 'move', 'turn_start', 'turn_end', 'answer_time', 'buy_decision', 'rent_due', 'auction_start', 'auction_bids', 'raise_cash', 'jail_stay', 'illegal_action', 'rent_skipped', 'bus_ticket_none']);
 
 // A plain-text account of a game for a reader or a model: the players, then
 // one line per event. `compact` drops the dice, moves and other noise;

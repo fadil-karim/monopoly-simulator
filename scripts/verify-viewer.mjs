@@ -132,7 +132,7 @@ await page.screenshot({ path: `${out}/stats.png`, fullPage: true });
 await page.goto(mono + '#models'); await page.waitForSelector('#models table.models');
 const mt = await text('#models');
 must(/heuristic · rules-v1/.test(mt) && /Win rate/i.test(mt) && /Each model's dice/i.test(mt), 'model stats table and charts');
-must(/Forfeits \/ game/i.test(mt) && /Time a turn/i.test(mt), 'forfeits a game and the time a turn are in the table');
+must(/Forfeits \/ game/i.test(mt) && /Time an answer/i.test(mt), 'forfeits a game and the time an answer are in the table');
 await page.screenshot({ path: `${out}/models.png`, fullPage: true });
 // 8. live: start a slow bot game and watch it
 const runner = spawn('node', ['runner/run.mjs', '--config', 'runner/config.bots.json', '--token', 'local-dev-token', '--site', url.replace(/\/$/, ''), '--data', mkdtempSync(join(tmpdir(), 'monopoly-verify-')), '--games', '1', '--seed', '77', '--max-rounds', '12', '--delay', '250'], { stdio: 'inherit' });
@@ -246,7 +246,7 @@ else {
   const ffShown = await page.$$eval('.pcard', (cards) => cards.map((c) => { const f = c.querySelector('.ff'); return f ? Number(f.innerText.match(/\d+/)[0]) : 0; }));
   const ffWant = tg.players.map((p) => (tw.players[p.id] || {}).forfeits || 0);
   must(ffWant.some(Boolean) && JSON.stringify(ffShown) === JSON.stringify(ffWant), `each card counts its player's forfeits: ${ffShown.join(' ')}`);
-  must(await page.$$eval('.pcard .m', (ms) => ms.every((m) => / a turn/.test(m.innerText))), 'each card gives its player\'s time a turn');
+  must(await page.$$eval('.pcard .m', (ms) => ms.every((m) => / an answer/.test(m.innerText))), 'each card gives how long its player keeps the table waiting for an answer');
   const shownRejected = tw.negotiations.filter((x) => x.outcome === 'rejected').reverse().slice(0, 40); // the newest forty, as listed
   const byDefault = shownRejected.some((x) => x.steps.some((st) => st.kind === 'reject' && st.source === 'forfeit'));
   await page.selectOption('#trade-outcome', 'rejected'); await wait(250);

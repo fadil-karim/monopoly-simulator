@@ -5,7 +5,8 @@
 // the passive default, logged as a `forfeit` with its reason), and the game goes
 // on with the player's obligations (rent, tax, cards, the jail fine) still met.
 // Only a seat configured as the rule-based bot, or a game with no decider at
-// all, is played by the heuristics.
+// all, is played by the heuristics. Every wait for a model's answer is timed and
+// logged as `answer_time`, against the player who kept the table waiting.
 
 import { makeBoard, GROUPS, CHANCE_CARDS, CHEST_CARDS, EDITION_INFO } from './board.js';
 import { heuristicDecide } from './heuristics.js';
@@ -85,7 +86,7 @@ export class Game {
       bankrupt: false,
       bankruptRound: null,
       passedGo: false,
-      stats: { rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0, forfeits: 0, turnMs: 0, turnsTimed: 0 },
+      stats: { rentPaid: 0, rentCollected: 0, bought: 0, auctionsWon: 0, trades: 0, jail: 0, housesBuilt: 0, llmCalls: 0, fallbacks: 0, messages: 0, forfeits: 0, answerMs: 0, answers: 0 },
     }));
     if (this.config.shuffleOrder) this.shuffle(this.players);
     this.props = {};
@@ -207,7 +208,9 @@ export class Game {
   // A seat played by the heuristics: every seat of a game with no decider, and a seat configured as the bot.
   isBot(p) { return !this.decider || (p.meta && p.meta.provider === 'heuristic'); }
   // One answer from a player. The decider answers for the AI (or says why it could not: `__forfeit` and
-  // `__error`, or a throw); an answer that is missing, unreadable or against the rules forfeits the choice.
+  // `__error`, or a throw); an answer that is missing, unreadable or against the rules forfeits the choice. The
+  // table's wait for a model's answer, from the question to the answer or the failure, is logged as `answer_time`
+  // before anything the answer brings; a bot answers at once and is not timed.
   async decide(p, type, ctx) {
     if (!this.decider) return { ...heuristicDecide(this, p, type, ctx), __source: 'heuristic' };
     // A game being stopped asks nobody more: the rest of its last turn takes every choice as a forfeit would, without
@@ -215,6 +218,7 @@ export class Game {
     const halted = () => ({ ...(FORFEIT[type] || (() => ({})))(ctx), __source: 'forfeit', reason: 'the game was stopped' });
     if (this.stopped) return halted();
     let result = null, failure = null;
+    const t0 = Date.now();
     try {
       result = await this.decider.decide({ game: this, player: p, type, ctx });
     } catch (e) {
@@ -222,6 +226,12 @@ export class Game {
     }
     if (this.stopped) return halted();
     const call = result && result.__call != null ? result.__call : null;
+    if (!this.isBot(p)) {
+      const ms = Date.now() - t0;
+      p.stats.answerMs += ms;
+      p.stats.answers++;
+      this.log('answer_time', { player: p.id, decision: type, ms, ...(call != null ? { call } : {}) });
+    }
     if (!failure && result && result.__forfeit) failure = { kind: result.__forfeit, reason: result.__error || result.__forfeit };
     if (!failure && (!result || typeof result !== 'object')) failure = { kind: 'none', reason: 'no answer' };
     if (!failure) {
@@ -328,18 +338,8 @@ export class Game {
     return this.result;
   }
 
-  // A turn, timed from its start to its end: the player's own questions, the answers it waits on from the others
-  // (trades, replies, bids) and everything the engine does. The time is logged as `turn_end`.
   async playTurn(p) {
     if (this.config.turnDelayMs > 0) await new Promise((r) => setTimeout(r, this.config.turnDelayMs));
-    const t0 = Date.now();
-    await this.playTurnBody(p);
-    const ms = Date.now() - t0;
-    p.stats.turnMs += ms;
-    p.stats.turnsTimed++;
-    this.log('turn_end', { player: p.id, ms });
-  }
-  async playTurnBody(p) {
     this.turn++;
     this.log('turn_start', { player: p.id, cash: p.cash, pos: p.pos, inJail: p.inJail });
     const pre = await this.prerollPhase(p);

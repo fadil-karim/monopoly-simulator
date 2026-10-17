@@ -11,9 +11,11 @@ import { traders } from './traders.mjs';
 
 const games = Number(process.argv[2] || 30);
 const edition = process.argv[3] || 'standard';
-const STAT_KEYS = ['rentPaid', 'rentCollected', 'bought', 'auctionsWon', 'trades', 'jail', 'housesBuilt', 'messages', 'forfeits', 'turnMs', 'turnsTimed'];
-let compared = 0, events = 0;
+const STAT_KEYS = ['rentPaid', 'rentCollected', 'bought', 'auctionsWon', 'trades', 'jail', 'housesBuilt', 'messages', 'forfeits', 'answerMs', 'answers'];
+let compared = 0, events = 0, answers = 0;
 const forfeits = {}, kinds = {};
+// A decider that counts the questions it is asked, to hold the timed answers against.
+const counted = (d) => ({ asked: 0, decide(args) { this.asked++; return d.decide(args); } });
 
 function diff(game, rep, e) {
   const out = [];
@@ -56,7 +58,7 @@ for (let g = 0; g < games; g++) {
     id: `r${g}`, seed: 1000 + g,
     config: { edition, maxRounds: 120, aiPreroll: 'always', freeParkingJackpot: g % 2 === 1 },
     players: [{ id: 'a', name: 'Alpha', colour: '#111' }, { id: 'b', name: 'Bravo' }, { id: 'c', name: 'Charlie' }, { id: 'd', name: 'Delta' }],
-    decider: g % 2 ? traders(3000 + g, { flaky: 1 / 7 }) : null,
+    decider: g % 2 ? counted(traders(3000 + g, { flaky: 1 / 7 })) : null,
     onEvent: (e, gm) => {
       if (!fromMeta) {
         fromMeta = new ReplayGame({ id: gm.id, edition: gm.edition, config: gm.config, seed: gm.seed, players: gm.players.map((p) => ({ ...p.meta, id: p.id, name: p.name })) });
@@ -85,8 +87,12 @@ for (let g = 0; g < games; g++) {
   }
   for (const e of game.events) if (e.type === 'forfeit') { forfeits[e.decision] = (forfeits[e.decision] || 0) + 1; kinds[e.kind] = (kinds[e.kind] || 0) + 1; }
   if (game.events.some((e) => e.type === 'forfeit' && e.decision === 'trade_response') && !game.events.some((e) => e.type === 'trade_response' && e.source === 'forfeit' && e.accept === false && /no valid answer/.test(e.reason))) throw new Error(`game ${g}: a forfeited trade response was not logged as a rejection with its reason`);
-  const turns = game.events.filter((e) => e.type === 'turn_start').length, ends = game.events.filter((e) => e.type === 'turn_end').length;
-  if (turns !== ends) throw new Error(`game ${g}: ${turns} turns began but ${ends} ended`);
+  // every question put to a player is timed, once, and a forfeit follows the time of the answer it forfeits
+  const timed = game.events.filter((e) => e.type === 'answer_time');
+  if (game.decider && timed.length !== game.decider.asked) throw new Error(`game ${g}: ${game.decider.asked} questions asked but ${timed.length} answers timed`);
+  if (!game.decider && timed.length) throw new Error(`game ${g}: a game of bots timed an answer`);
+  game.events.forEach((e, k) => { if (e.type === 'forfeit') { const t = game.events[k - 1]; if (!t || t.type !== 'answer_time' || t.player !== e.player || t.decision !== e.decision) throw new Error(`game ${g}: forfeit #${e.seq} does not follow the time of its answer`); } });
+  answers += timed.length;
   if (g === 0) {
     const t = transcript(fromMeta, { compact: true, maxChars: 4000 });
     if (!/Result: /.test(t) || !/left out/.test(t)) throw new Error('transcript shape');
@@ -95,4 +101,5 @@ for (let g = 0; g < games; g++) {
 }
 for (const k of ['error', 'none', 'empty', 'invalid']) if (!kinds[k]) throw new Error(`no ${k} forfeit: the check did not cover it`);
 for (const d of ['preroll', 'buy', 'bid', 'trade_response']) if (!forfeits[d]) throw new Error(`no forfeited ${d}: the check did not cover it`);
-console.log({ edition, games, events, compared, forfeits, kinds, ok: true });
+if (!answers) throw new Error('no answer was timed: the check did not cover it');
+console.log({ edition, games, events, compared, answers, forfeits, kinds, ok: true });
