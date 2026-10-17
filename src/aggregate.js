@@ -70,6 +70,7 @@ export function aggregateModels(players) {
       rentCollected: 0, rentPaid: 0, bought: 0, auctionsWon: 0, trades: 0, housesBuilt: 0, jail: 0, messages: 0,
       madeTotal: 0, madeRent: 0, madeGo: 0, madeBank: 0, madePlayers: 0, paidTotal: 0,
       calls: 0, fallbacks: 0, illegal: 0, errors: 0, latencyMs: 0, input: 0, output: 0, cached: 0, reasoning: 0,
+      forfeits: 0, forfeitGames: 0, forfeitKinds: {}, forfeitDecisions: {}, turnMs: 0, turnsTimed: 0, longestTurnMs: 0,
       cost: 0, costGames: 0, costCalls: 0, reported: 0, unpriced: 0,
       rolls: new Array(13).fill(0), rollCount: 0, turns: 0,
     });
@@ -86,6 +87,13 @@ export function aggregateModels(players) {
     a.madeTotal += inc.total || 0; a.madeRent += inc.rentTotal || 0; a.madeGo += inc.go || 0; a.madeBank += inc.bank || 0; a.madePlayers += inc.players || 0; a.paidTotal += inc.paidTotal || 0;
     a.calls += calls.n || 0; a.fallbacks += calls.fallbacks || 0; a.illegal += calls.illegal || 0; a.errors += calls.errors || 0; a.latencyMs += calls.latencyMs || 0;
     a.input += calls.input || 0; a.output += calls.output || 0; a.cached += calls.cached || 0; a.reasoning += calls.reasoning || 0;
+    // Forfeits and turn times are kept from v2.0 on; the games played before carry neither and are left out of both.
+    if (st.forfeits) {
+      a.forfeitGames++; a.forfeits += st.forfeits.n || 0;
+      for (const [k, n] of Object.entries(st.forfeits.kinds || {})) a.forfeitKinds[k] = (a.forfeitKinds[k] || 0) + n;
+      for (const [k, n] of Object.entries(st.forfeits.decisions || {})) a.forfeitDecisions[k] = (a.forfeitDecisions[k] || 0) + n;
+    }
+    if (st.time && st.time.turns) { a.turnMs += st.time.ms || 0; a.turnsTimed += st.time.turns; a.longestTurnMs = Math.max(a.longestTurnMs, st.time.longestMs || 0); }
     // Games played before costs were kept carry no cost and are left out of the averages.
     if (Number.isFinite(calls.cost)) { a.cost += calls.cost; a.costGames++; a.costCalls += calls.n || 0; a.reported += calls.reported || 0; a.unpriced += calls.unpriced || 0; }
     if (Array.isArray(st.rolls)) for (let t = 2; t <= 12; t++) a.rolls[t] += st.rolls[t] || 0;
@@ -104,6 +112,8 @@ export function aggregateModels(players) {
       // A model whose calls have no price on file has no cost per game, rather than a cost of nothing.
       cost: { total: Math.round(a.cost * 1e6) / 1e6, games: a.costGames, perGame: a.costGames && !(a.unpriced && !a.cost) ? Math.round((a.cost / a.costGames) * 1e6) / 1e6 : null, perCall: a.costCalls && !(a.unpriced && !a.cost) ? Math.round((a.cost / a.costCalls) * 1e8) / 1e8 : null, reported: a.reported, unpriced: a.unpriced },
       rolls: a.rolls, rollCount: a.rollCount, rollMean: a.rollCount ? Math.round((rollSum / a.rollCount) * 100) / 100 : null,
+      forfeits: { n: a.forfeits, games: a.forfeitGames, perGame: avg(a.forfeits, a.forfeitGames), kinds: a.forfeitKinds, decisions: a.forfeitDecisions },
+      time: { turns: a.turnsTimed, avgMs: a.turnsTimed ? Math.round(a.turnMs / a.turnsTimed) : null, longestMs: a.longestTurnMs || null },
     };
   }).sort((x, y) => y.winRate - x.winRate || y.avgNetWorth - x.avgNetWorth);
   return { models, games: new Set(players.map((r) => r.game_id)).size };

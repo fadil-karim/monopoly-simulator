@@ -244,6 +244,7 @@ body.board-full { overflow: hidden; }
 .pcard.bankrupt { opacity: .5; }
 .pcard .n { font-weight: 700; display: flex; justify-content: space-between; font-size: 15px; }
 .pcard .m { color: var(--muted); font-size: 11px; }
+.pcard .m .ff { color: var(--danger); font-weight: 600; } /* choices forfeited for want of a valid answer */
 .pcard .api { font-size: 12px; display: flex; flex-wrap: wrap; gap: 0 4px; margin-top: 2px; }
 .pcard .api .usd { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pcard .props { font-size: 11px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 3px; }
