@@ -1,0 +1,30 @@
+# The simulator, apart from the site.
+#
+# On this machine, with the dashboard:   docker compose up -d --build     then open http://127.0.0.1:8788/
+# On a cloud instance, headless:         cp simulator.env.example simulator.env, fill it in, then
+#                                        MONOPOLY_MODE=play docker compose up -d --build
+# A one-off task:                        docker compose run --rm simulator publish   (or probe, store, import-site)
+#
+# The games, the table and the keys the dashboard remembers live in the volume monopoly-data, which a rebuild, an
+# update or `docker compose down` leaves alone; only `docker compose down -v` deletes it. The dashboard is published
+# on this machine's loopback only: from elsewhere, reach it through an SSH tunnel
+# (ssh -L 8788:127.0.0.1:8788 you@the-instance), and set DASHBOARD_PASSWORD in simulator.env as a second lock.
+services:
+  simulator:
+    build: .
+    image: monopoly-simulator
+    init: true
+    restart: unless-stopped
+    command: ["${MONOPOLY_MODE:-dashboard}"]
+    env_file:
+      - path: simulator.env
+        required: false
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-8788}:8788"
+    volumes:
+      - monopoly-data:/data
+    # time for a game in play to be kept as stopped and for the site to be sent what it lacks
+    stop_grace_period: 60s
+
+volumes:
+  monopoly-data:

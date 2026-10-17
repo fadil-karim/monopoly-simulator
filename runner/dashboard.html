@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monopoly AI · runner dashboard</title>
+<title>Monopoly AI · simulator dashboard</title>
 <style>
   :root { --bg: #efe8d0; --paper: #fdfbf2; --ink: #1f1c17; --muted: #6b665a; --line: #cfc7ad; --red: #ed1b24; --green: #1fb25a; }
   * { box-sizing: border-box; }
@@ -42,6 +42,13 @@
   pre.log { background: #1a1d1a; color: #e8e2cc; padding: 12px 14px; border-radius: 8px; max-height: 360px; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 10px 0 0; white-space: pre-wrap; }
   pre.log .win { color: #7ee2a0; font-weight: 700; }
   pre.log .warn { color: #ffb86b; }
+  pre.log .stop { color: #f4d27a; }
+  table.games td { font-size: 13px; border-top: 1px solid var(--line); }
+  table.games td.id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--line); }
+  .tag.ok { background: var(--green); color: #fff; }
+  .tag.play { background: #2b6cb0; color: #fff; }
+  .tag.warn { background: #e8a33c; color: #fff; }
   a { color: var(--red); }
   .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
   .hidden { display: none !important; }
@@ -56,7 +63,7 @@
 <body>
 <header>
   <span class="logo">MONOPOLY</span>
-  <h1>Runner dashboard <span style="color:var(--muted);font-weight:400">· local</span></h1>
+  <h1>Simulator dashboard <span id="where" style="color:var(--muted);font-weight:400"></span></h1>
   <div class="status"><span id="games" class="hint"></span><span id="pill" class="pill">idle</span></div>
 </header>
 <main>
@@ -74,7 +81,7 @@
     </div>
     <div class="actions" style="margin-top:10px">
       <label class="row"><input id="loop" type="checkbox"> Keep playing batch after batch</label>
-      <label class="row"><input id="dry" type="checkbox"> Dry run: play without uploading</label>
+      <label class="row"><input id="dry" type="checkbox"> Dry run: keep the games in the store and send nothing to the site</label>
     </div>
   </section>
 
@@ -82,8 +89,8 @@
     <h2>Keys</h2>
     <div id="keys" class="keyrow"></div>
     <div class="actions" style="margin-top:10px">
-      <label class="row"><input id="remember" type="checkbox"> Remember the site, the token and the keys in runner/.env</label>
-      <span class="note">Unticked, they are handed to the runner for this run only. A seat without a key plays as the rule-based bot.</span>
+      <label class="row"><input id="remember" type="checkbox"> Remember the site, the token and the keys in <span id="envfile">the .env file</span></label>
+      <span class="note">Unticked, they are handed to the runner for this run only. A model without its key is left out of the pool: no bot plays in its place.</span>
     </div>
   </section>
 
@@ -116,12 +123,27 @@
       <button type="button" id="save">Save</button>
       <button type="button" id="start" class="primary">Start</button>
       <button type="button" id="probe" title="Ask every model in the pool one real decision, as a game would, and say which seats answer">Check the seats</button>
-      <button type="button" id="stop" disabled>Stop</button>
+      <button type="button" id="finish" disabled title="Play the games in play to the end, then stop">Stop after this game</button>
+      <button type="button" id="stop" disabled title="End the games in play after the current turn, kept as stopped">Stop now</button>
       <a id="live" href="#" target="_blank" rel="noopener">Open the site's Live tab</a>
       <span id="msg" class="note"></span>
     </div>
     <pre id="log" class="log">Nothing running.</pre>
-    <p class="hint">Save writes the table to runner/config.json, which the runner prefers from then on; Start saves and runs. Check the seats saves and asks every model in the pool one decision, as a game would, to show which answer and which would hand their decisions to the rule-based bot, for a few cents and without touching the site. Stop finishes the uploads and marks a running game aborted.</p>
+    <p class="hint">Save writes the table to <span id="savesto">config.json</span>, which the runner prefers from then on; Start saves and runs. Check the seats saves and asks every model in the pool one decision, as a game would, to show which answer and which would forfeit their decisions, for a few cents and without touching the site. Stop after this game plays the games in play to the end and starts no more; Stop now ends them after the current turn and keeps them in the store as stopped. Either way the site is sent what it has not got before the runner stops.</p>
+  </section>
+
+  <section>
+    <h2>The store</h2>
+    <p id="store-line" class="hint" style="margin-top:0">Reading the store…</p>
+    <table class="games">
+      <thead><tr><th>Game</th><th>Started</th><th>Players</th><th>State</th><th>Result</th><th>On the site</th></tr></thead>
+      <tbody id="store-games"></tbody>
+    </table>
+    <div class="actions" style="margin-top:10px">
+      <button type="button" id="publish" title="Send the site every game in the store it has not wholly got">Send the site what it lacks</button>
+      <button type="button" id="republish" title="Send every game in the store again: after the site's database was replaced or emptied">Send everything again</button>
+    </div>
+    <p class="hint">Every game is written here as it is played, its events and every model call with the prompts, before anything goes to the site, so an update to the site, an outage or a new database never touches a game in play or the record of the games played. The runner sends the site what it lacks as it plays and keeps trying while the site cannot take it; these buttons do the same when nothing is playing.</p>
   </section>
 </main>
 <script>
@@ -253,16 +275,36 @@ function fill() {
   $('#remember').checked = !!(S.env.SITE || Object.keys(S.env.keys).length);
   renderPool();
   $('#msg').textContent = `Table read from ${S.configFile}.`;
+  $('#envfile').textContent = S.envFile;
+  $('#savesto').textContent = S.savesTo;
+  $('#where').textContent = `· ${S.container ? 'in its container' : 'on this machine'} · data ${S.data}`;
   for (const id of new Set([...cfg.players.map((p) => p.provider), cfg.narrator && cfg.narrator.provider].filter(Boolean))) loadCatalogue(id);
 }
+const WHEN = (iso) => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+const STATE = { finished: ['finished', 'ok'], aborted: ['stopped', 'warn'], running: ['in play', 'play'], stalled: ['no runner', 'warn'] };
+function renderStore() {
+  const st = S.store;
+  if (!st) return;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  $('#store-line').textContent = `${plural(st.games, 'game')} in ${st.folder} (${st.mb} MB): ${st.finished} finished, ${st.stopped} stopped, ${st.playing} in play${st.stalled ? `, ${st.stalled} whose runner stopped` : ''}. ${st.behind ? `${plural(st.behind, 'game')} not yet wholly on the site.` : 'The site has every game played for it that has ended.'}${st.others ? ` ${st.others} played for another site or in a dry run, which go only there.` : ''}`;
+  $('#store-games').innerHTML = st.latest.map((g) => {
+    const [word, cls] = STATE[g.status] || [g.status, ''];
+    const result = g.status === 'finished' ? `${esc(g.winner || '')} won${g.rounds ? ` in ${g.rounds} rounds` : ''}` : esc(g.endReason || '');
+    const onSite = !g.site ? 'kept only (dry run)' : !g.mine ? `played for ${esc(g.site)}` : g.published ? '<span class="tag ok">yes</span>' : g.status === 'running' ? (g.registered ? 'as it plays' : 'not yet') : g.registered ? '<span class="tag warn">partly</span>' : '<span class="tag warn">not yet</span>';
+    return `<tr><td class="id">${esc(g.id)}</td><td>${esc(WHEN(g.startedAt))}</td><td>${esc(g.players.join(', '))}</td><td><span class="tag ${cls}">${esc(word)}</span></td><td>${result}</td><td>${onSite}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="hint">No game yet.</td></tr>';
+}
 function renderRun() {
-  $('#pill').textContent = S.running ? 'running' : 'idle';
+  const task = S.running ? S.task : null;
+  $('#pill').textContent = task === 'probe' ? 'checking' : task === 'publish' ? 'sending' : S.running ? 'running' : 'idle';
   $('#pill').classList.toggle('on', S.running);
   $('#start').disabled = S.running; $('#probe').disabled = S.running; $('#stop').disabled = !S.running;
+  $('#finish').disabled = task !== 'play'; $('#publish').disabled = S.running; $('#republish').disabled = S.running;
+  renderStore();
   $('#games').textContent = S.startedAt ? `${S.games} game${S.games === 1 ? '' : 's'} finished this run` : '';
   const log = $('#log');
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.innerHTML = S.log.length ? S.log.map((l) => `<span class="${/^[■✓] /.test(l) ? 'win' : /^[!✗] |error|failed/i.test(l) ? 'warn' : ''}">${esc(l)}</span>`).join('\n') : 'Nothing running.';
+  log.innerHTML = S.log.length ? S.log.map((l) => `<span class="${/^[■✓] /.test(l) ? 'win' : /^[!✗] |error|failed/i.test(l) ? 'warn' : /^□ /.test(l) ? 'stop' : ''}">${esc(l)}</span>`).join('\n') : 'Nothing running.';
   if (atEnd) log.scrollTop = log.scrollHeight;
   const site = $('#site').value.trim().replace(/\/$/, '');
   $('#live').href = site ? site + '/monopoly/#live' : '#';
@@ -317,7 +359,7 @@ document.addEventListener('click', (e) => {
   inp.type = inp.type === 'password' ? 'text' : 'password'; b.textContent = inp.type === 'password' ? 'show' : 'hide';
 });
 $('#save').addEventListener('click', async () => {
-  try { const g = gather(); const r = await api('/api/save', g); $('#msg').textContent = `Saved to ${r.configFile}${r.envWritten ? ' and runner/.env' : ''}.`; }
+  try { const g = gather(); const r = await api('/api/save', g); $('#msg').textContent = `Saved to ${r.configFile}${r.envFile ? ` and ${r.envFile}` : ''}.`; }
   catch (err) { $('#msg').textContent = `Save failed: ${err.message}`; }
 });
 $('#start').addEventListener('click', async () => {
@@ -328,7 +370,15 @@ $('#probe').addEventListener('click', async () => {
   try { const g = gather(); g.options = { probe: true }; await api('/api/start', g); $('#msg').textContent = 'Checking the seats: one decision for every model in the pool.'; await refresh(false); }
   catch (err) { $('#msg').textContent = `The check failed to start: ${err.message}`; }
 });
-$('#stop').addEventListener('click', async () => { await api('/api/stop', {}); $('#msg').textContent = 'Stopping: the uploads finish first.'; });
+$('#stop').addEventListener('click', async () => { await api('/api/stop', {}); $('#msg').textContent = 'Stopping: the games in play end after the current turn, then the site is sent what it lacks.'; });
+$('#finish').addEventListener('click', async () => { await api('/api/finish', {}); $('#msg').textContent = 'The games in play are played to the end; no new game starts.'; });
+async function publish(again) {
+  if (again && !confirm('Send every game in the store to the site again? The site keeps what it already has; this fills a database that was replaced or emptied.')) return;
+  try { const g = gather(); g.options = { publish: again ? 'again' : 'behind' }; await api('/api/start', g); $('#msg').textContent = again ? 'Sending every game in the store to the site again.' : 'Sending the site what it lacks.'; await refresh(false); }
+  catch (err) { $('#msg').textContent = `Could not start sending: ${err.message}`; }
+}
+$('#publish').addEventListener('click', () => publish(false));
+$('#republish').addEventListener('click', () => publish(true));
 $('#site').addEventListener('input', renderRun);
 refresh(true).catch((e) => { $('#msg').textContent = e.message; });
 setInterval(() => refresh(false).catch(() => {}), 1500);

@@ -1,0 +1,12 @@
+# The image takes package.json, public/assets/app/ and runner/ (see Dockerfile); nothing secret or local goes with them.
+.git
+node_modules
+.wrangler
+.render-check
+.dev.vars
+simulator.env
+*.log
+runner/.env
+runner/config.json
+runner/out
+runner/games
