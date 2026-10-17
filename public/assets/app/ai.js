@@ -13,7 +13,8 @@ const gbp = (n) => `£${n}`;
 export function rulesText(game) {
   const mega = game.edition === 'mega';
   const lines = [
-    `You are an expert Monopoly player in a simulated game (London edition${mega ? ', MEGA rules, 52 squares' : ', standard 40-square board'}). Every player is an AI. The goal is to be the last solvent player, or to have the highest net worth when the round limit (${game.config.maxRounds} rounds) is reached.`,
+    // with no round limit the game is played to the last player standing, so the goal says so (it once read "the round limit (null rounds)")
+    `You are an expert Monopoly player in a simulated game (London edition${mega ? ', MEGA rules, 52 squares' : ', standard 40-square board'}). Every player is an AI. The goal is to be the last solvent player${game.config.maxRounds ? `, or to have the highest net worth when the round limit (${game.config.maxRounds} rounds) is reached` : ': the game is played until everyone else is bankrupt'}.`,
     '',
     'RULES IN FORCE',
     `- Each player starts with ${gbp(game.config.startingCash || game.info.startingCash)}. Passing GO pays ${gbp(game.config.salary)}.`,
